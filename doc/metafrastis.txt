@@ -1,0 +1,104 @@
+*metafrastis.txt*         For Neovim >= 0.8.0    Last change: 2025 December 03
+
+==============================================================================
+Table of Contents                              *metafrastis-table-of-contents*
+
+1. Metafrastis.nvim Overview              |metafrastis-overview|
+2. Installation                           |metafrastis-installation|
+3. Configuration                          |metafrastis-configuration|
+4. Commands                               |metafrastis-commands|
+5. Cost Notes                             |metafrastis-cost|
+6. Price Refresh                          |metafrastis-refresh|
+
+==============================================================================
+1. Metafrastis.nvim Overview                        *metafrastis-overview*
+
+Translate text inside Neovim using multiple providers (Google Translate/Cloud,
+DeepL, OpenAI, Google Gemini, OpenRouter). Includes file-backed caching and a
+per-call cost guard to avoid runaway spend.
+
+==============================================================================
+2. Installation                                   *metafrastis-installation*
+
+Use your preferred manager. Example (lazy.nvim):
+
+>
+    {
+      "zchee/metafrastis.nvim",
+      config = function()
+        require("metafrastis").setup()
+      end,
+    }
+<
+
+==============================================================================
+3. Configuration                                  *metafrastis-configuration*
+
+>
+    require("metafrastis").setup({
+      provider = "openai",   -- falls back to echo if credentials missing
+      target_lang = "en",
+      max_chars = 8000,
+      cache = {
+        enabled = true,
+        ttl = 7 * 24 * 3600,
+        max_estimated_cost = 1.0,
+      },
+      http = { backend = "curl" },  -- set to "plenary" to use plenary.curl if curl missing
+      providers = {
+        openai = { api_key = os.getenv("OPENAI_API_KEY"), model = "gpt-4o-mini" },
+        google = { api_key = os.getenv("GOOGLE_API_KEY") },
+        deepl = { api_key = os.getenv("DEEPL_API_KEY") },
+        gemini = { api_key = os.getenv("GOOGLE_GENAI_KEY"), model = "gemini-2.5-flash" },
+        openrouter = { api_key = os.getenv("OPENROUTER_API_KEY"), model = "openrouter/auto" },
+        echo = { suffix = "[echo]" },
+      },
+    })
+<
+
+If a configured provider is missing credentials, Metafrastis uses the built-in
+`echo` provider so you can test locally without network calls.
+
+==============================================================================
+4. Commands                                         *metafrastis-commands*
+
+`:MetafrastisTranslate [source] [target]`~
+    Translate the current range (default current line). Use `!` to replace
+    buffer text, otherwise the translation is echoed.
+
+:MetafrastisCacheClear~
+    Remove all cached translations under `stdpath('cache')/metafrastis`.
+
+Examples:
+
+>
+    :'<,'>MetafrastisTranslate en es!
+    :MetafrastisTranslate es
+<
+
+==============================================================================
+5. Cost Notes                                             *metafrastis-cost*
+
+Approximate 2025-12 pricing (USD):
+
+* Google Cloud Translate v2: ~$20 per million characters (500k free monthly).
+* DeepL API Pro: ~$25 per million characters (plus small base fee).
+* OpenAI gpt-4o-mini: ~$0.15/M input tokens + $0.60/M output tokens.
+* Gemini 2.5 Flash: ~$0.30/M input tokens + $2.50/M output tokens.
+* OpenRouter adds ~5% platform fee on top of model rates.
+
+Use caching and `max_estimated_cost` to keep single-call cost below your
+budget; at ~50 tokens per request and 50k requests, gpt-4o-mini typically stays
+well below $50/month.
+
+==============================================================================
+6. Price Refresh                                   *metafrastis-refresh*
+
+- When provider rates change, update `pricing_last_review` and price fields in
+  `lua/metafrastis/config.lua`.
+- Lower `cache.max_estimated_cost` for short snippets (e.g. 0.25) or raise for
+  larger batches as needed.
+- Tune `max_chars` to your usual translation size to bound per-call spend and
+  latency.
+
+vim:tw=78:ts=8:noet:ft=help:norl:
