@@ -14,11 +14,13 @@ local provider_echo = require("metafrastis.providers.echo")
 ---@class Metafrastis
 ---@field config MetafrastisConfig
 ---@field http fun(method: string, url: string, opts: table): table
+---@field http_async fun(method: string, url: string, opts: table): table
 local M = {
   config = cfg.defaults(),
 }
 
 M.http = http_builder.build(M.config.http)
+M.http_async = http_builder.build_async(M.config.http)
 
 local function register_builtin()
   registry.reset()
@@ -52,15 +54,13 @@ function M.setup(opts)
   end
   M.config = merged
   M.http = http_builder.build(merged.http)
+  M.http_async = http_builder.build_async(merged.http)
 end
 
----@param text string
----@param opts table|nil
----@return string
-function M.translate(text, opts)
+local function perform_translate(http_fn, text, opts)
   assert(type(text) == "string", "text must be a string")
   if text == "" then
-    return ""
+    return "", { cached = false, provider = M.config.provider }
   end
   local options = opts or {}
   local config_table = M.config
@@ -97,12 +97,20 @@ function M.translate(text, opts)
   local key = cache.make_key(provider_name, source_lang, target_lang, text)
   local cached = cache.get(config_table.cache, key)
   if cached then
-    return cached
+    return cached, { cached = true, provider = provider_name }
   end
 
-  local translated = registry.translate(provider_name, M.http, payload)
+  local translated = registry.translate(provider_name, http_fn, payload)
   cache.put(config_table.cache, key, translated)
-  return translated
+  return translated, { cached = false, provider = provider_name }
+end
+
+---@param text string
+---@param opts table|nil
+---@return string, table|nil
+function M.translate(text, opts)
+  local translated, meta = perform_translate(M.http, text, opts)
+  return translated, meta
 end
 
 ---@param bufnr integer|nil
@@ -149,6 +157,80 @@ function M.command(opts)
   return M.translate_range(0, start_line, end_line, command_opts)
 end
 
+---@param text string
+---@param opts table|nil
+---@param callbacks {on_success?:fun(result:string, meta:table), on_error?:fun(err:any)}|nil
+function M.translate_async(text, opts, callbacks)
+  local cb = callbacks or {}
+  local ok_async, async = pcall(require, "plenary.async")
+  if not ok_async then
+    local ok_sync, res, meta = pcall(perform_translate, M.http, text, opts)
+    if ok_sync then
+      if cb.on_success then
+        vim.schedule(function()
+          cb.on_success(res, meta)
+        end)
+      end
+    elseif cb.on_error then
+      vim.schedule(function()
+        cb.on_error(res)
+      end)
+    end
+    return
+  end
+  local http_fn = M.http_async or M.http
+  async.void(function()
+    local ok, result_or_err, meta = pcall(perform_translate, http_fn, text, opts)
+    if ok then
+      if cb.on_success then
+        vim.schedule(function()
+          cb.on_success(result_or_err, meta)
+        end)
+      end
+    else
+      if cb.on_error then
+        vim.schedule(function()
+          cb.on_error(result_or_err)
+        end)
+      end
+    end
+  end)()
+end
+
+---@param bufnr integer|nil
+---@param start_line integer
+---@param end_line integer
+---@param opts table|nil
+---@param callbacks {on_success?:fun(result:string, meta:table), on_error?:fun(err:any)}|nil
+function M.translate_range_async(bufnr, start_line, end_line, opts, callbacks)
+  local buffer = bufnr or vim.api.nvim_get_current_buf()
+  local lines = vim.api.nvim_buf_get_lines(buffer, start_line, end_line, false)
+  local joined = table.concat(lines, "\n")
+  local cb = callbacks or {}
+  M.translate_async(joined, opts, {
+    on_success = function(translated, meta)
+      local should_replace = opts and opts.replace or M.config.replace
+      if should_replace then
+        local new_lines = util.split_lines(translated)
+        if #new_lines == 0 then
+          new_lines = { "" }
+        end
+        vim.api.nvim_buf_set_lines(buffer, start_line, end_line, false, new_lines)
+      else
+        vim.api.nvim_echo({ { translated, "Normal" } }, false, {})
+      end
+      if cb.on_success then
+        cb.on_success(translated, meta)
+      end
+    end,
+    on_error = function(err)
+      if cb.on_error then
+        cb.on_error(err)
+      end
+    end,
+  })
+end
+
 ---@param name string
 ---@param provider table
 function M.register_provider(name, provider)
@@ -164,6 +246,7 @@ function M._reset_for_tests()
   M.config = cfg.defaults()
   register_builtin()
   M.http = http_builder.build(M.config.http)
+  M.http_async = http_builder.build_async(M.config.http)
   cache.clear(M.config.cache)
 end
 

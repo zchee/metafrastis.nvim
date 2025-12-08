@@ -49,7 +49,7 @@ function M.defaults()
     pricing_last_review = "2025-12-03",
     http = {
       timeout = 20000, -- milliseconds
-      backend = "curl",
+      backend = "plenary",
     },
     providers = {
       echo = {
