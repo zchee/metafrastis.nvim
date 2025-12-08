@@ -44,7 +44,7 @@ Use your preferred manager. Example (lazy.nvim):
         ttl = 7 * 24 * 3600,
         max_estimated_cost = 1.0,
       },
-      http = { backend = "curl" },  -- set to "plenary" to use plenary.curl if curl missing
+      http = { backend = "plenary" },  -- default: Plenary job-based curl; set to "curl" to force vim.system
       providers = {
         openai = { api_key = os.getenv("OPENAI_API_KEY"), model = "gpt-4o-mini" },
         google = { api_key = os.getenv("GOOGLE_API_KEY") },
@@ -65,6 +65,12 @@ If a configured provider is missing credentials, Metafrastis uses the built-in
 `:MetafrastisTranslate [source] [target]`~
     Translate the current range (default current line). Use `!` to replace
     buffer text, otherwise the translation is echoed.
+
+:MetafrastisTranslateUI [source] [target]~
+    Async UI path using the Plenary backend. Prompts for target language when
+    omitted (Snacks.input if available, otherwise `vim.ui.input`). Progress and
+    results are shown via Snacks.notify when installed, with `vim.notify`
+    fallback.
 
 :MetafrastisCacheClear~
     Remove all cached translations under `stdpath('cache')/metafrastis`.

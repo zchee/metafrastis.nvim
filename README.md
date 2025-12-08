@@ -1,6 +1,6 @@
 # Metafrastis.nvim
 
-Translate text inside Neovim through multiple backends (Google Translate/Cloud, DeepL, OpenAI, Google Gemini, OpenRouter) with caching and simple cost guards. Designed to stay cheap at scale: default settings favor low-cost models, reuse cached results, and block unusually expensive calls.
+Translate text inside Neovim through multiple backends with caching and simple cost guards. Designed to stay cheap at scale: default settings favor low-cost models, reuse cached results, and block unusually expensive calls.
 
 ## Features
 
@@ -8,7 +8,16 @@ Translate text inside Neovim through multiple backends (Google Translate/Cloud, 
 - Pluggable providers with shared HTTP abstraction; drop in your own provider if needed.
 - File-backed cache under `stdpath('cache')/metafrastis` to avoid paying twice.
 - Cost estimation per provider with a configurable safety ceiling.
-- Minimal dependencies: uses `curl` and Neovim's standard Lua APIs.
+- Plenary job backend by default for faster, non-blocking HTTP; curl fallback when Plenary is unavailable.
+- Async-friendly UI command `:MetafrastisTranslateUI` that prompts for target language and reports progress via Snacks (falls back to `vim.ui.input`/`vim.notify` when Snacks is missing).
+
+## Backends
+
+- Google Translate/Cloud
+- DeepL
+- OpenAI
+- Google Gemini
+- OpenRouter
 
 ## Installation
 
@@ -18,6 +27,11 @@ Use your preferred plugin manager; examples:
 -- lazy.nvim
 {
   "zchee/metafrastis.nvim",
+  dependencies = {
+    "nvim-lua/plenary.nvim",
+    -- Optional but recommended for richer UI
+    "folke/snacks.nvim",
+  },
   config = function()
     require("metafrastis").setup()
   end,
@@ -37,7 +51,7 @@ require("metafrastis").setup({
     max_estimated_cost = 1.0, -- USD per call guard
   },
   http = {
-    backend = "curl", -- set to "plenary" to use plenary.curl if curl is unavailable
+    backend = "plenary", -- default: Plenary job-based curl; set to "curl" to force vim.system
   },
   providers = {
     openai = {
@@ -75,6 +89,10 @@ If a configured provider is missing credentials, Metafrastis falls back to the b
   - Examples:  
     - `:'<,'>MetafrastisTranslate en es!` (replace visual selection)  
     - `:MetafrastisTranslate es` (auto-detect source, echo Spanish translation)
+- `:MetafrastisTranslateUI [source] [target]`  
+  - Async path using the Plenary backend.  
+  - Prompts for target language when omitted (uses Snacks.input if available, otherwise `vim.ui.input`).  
+  - Shows progress/result via Snacks.notify when available; falls back to `vim.notify`.
 - `:MetafrastisCacheClear` — purge on-disk cache.
 
 ## Cost guidance (2025-12)
