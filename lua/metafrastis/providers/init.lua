@@ -33,7 +33,8 @@ function M.translate(name, http, payload)
   local provider = registry[name]
   assert(provider, "unknown provider: " .. name)
   if provider.validate then
-    local ok, err = provider.validate(payload.config or {})
+    local provider_cfg = (payload.config and payload.config.providers and payload.config.providers[name]) or {}
+    local ok, err = provider.validate(provider_cfg)
     if not ok then
       error(err)
     end

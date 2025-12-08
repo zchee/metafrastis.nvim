@@ -67,6 +67,41 @@ describe("translation core", function()
       metafrastis.translate("hi", { target_lang = "fr" })
     end)
   end)
+
+  it("uses provider-specific config during validation", function()
+    registry.register("needs_secret", {
+      validate = function(cfg)
+        if cfg.secret ~= "ok" then
+          return false, "secret missing"
+        end
+        return true
+      end,
+      translate = function(_, payload)
+        local cfg = payload.config.providers.needs_secret
+        return string.format("%s-%s", payload.text, cfg.secret)
+      end,
+    })
+    metafrastis.config.provider = "needs_secret"
+    metafrastis.config.providers.needs_secret = { secret = "ok" }
+
+    local out = metafrastis.translate("ping", { target_lang = "en" })
+    assert.equals("ping-ok", out)
+  end)
+
+  it("falls back to echo when provider lacks credentials at call time", function()
+    metafrastis.setup({
+      provider = "deepl",
+      providers = {
+        deepl = { api_key = "" },
+      },
+    })
+
+    local out, meta = metafrastis.translate("Hello", { target_lang = "ja" })
+    assert.equals("Hello [echo]->ja", out)
+    assert.is_table(meta)
+    assert.equals("echo", meta.provider)
+    assert.is_false(meta.cached)
+  end)
 end)
 
 describe("commands", function()
