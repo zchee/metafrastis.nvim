@@ -69,7 +69,7 @@ function M.defaults()
       },
       deepl = {
         api_key = vim.env.DEEPL_API_KEY,
-        base_url = "https://api-free.deepl.com/v2/translate",
+        base_url = "https://api.deepl.com/v2/translate",
         price_per_million_chars = 25.0,
       },
       openai = {
