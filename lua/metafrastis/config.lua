@@ -3,6 +3,9 @@
 ---@field ttl number
 ---@field dir string
 ---@field max_estimated_cost number
+---@field memory_enabled boolean
+---@field memory_max_entries integer
+---@field memory_skip_disk_ttl integer
 
 ---@class MetafrastisHttpConfig
 ---@field timeout integer
@@ -45,6 +48,9 @@ function M.defaults()
       ttl = 7 * 24 * 3600,
       dir = default_cache_dir(),
       max_estimated_cost = 1.0,
+      memory_enabled = true,
+      memory_max_entries = 512,
+      memory_skip_disk_ttl = 5,
     },
     pricing_last_review = "2025-12-03",
     http = {
