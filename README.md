@@ -9,7 +9,7 @@ Translate text inside Neovim through multiple backends with caching and simple c
 - File-backed cache under `stdpath('cache')/metafrastis` to avoid paying twice.
 - Cost estimation per provider with a configurable safety ceiling.
 - Plenary job backend by default for faster, non-blocking HTTP; curl fallback when Plenary is unavailable.
-- Async-friendly UI command `:MetafrastisTranslateUI` that prompts for target language and reports progress via Snacks (falls back to `vim.ui.input`/`vim.notify` when Snacks is missing).
+- Async-friendly UI command `:MetafrastisTranslateUI` that prompts for target language, reports progress via Snacks, and shows results in a Snacks.win floating window when available (falls back to `vim.ui.input`/`vim.notify` + echo when Snacks is missing).
 
 ## Backends
 
@@ -92,7 +92,7 @@ If a configured provider is missing credentials, Metafrastis falls back to the b
 - `:MetafrastisTranslateUI [source] [target]`  
   - Async path using the Plenary backend.  
   - Prompts for target language when omitted (uses Snacks.input if available, otherwise `vim.ui.input`).  
-  - Shows progress/result via Snacks.notify when available; falls back to `vim.notify`.
+  - Shows progress via Snacks.notify and renders the translation in a Snacks.win floating window when not replacing; falls back to `vim.notify` + echo when Snacks is missing.
 - `:MetafrastisCacheClear` — purge on-disk cache.
 
 ## Cost guidance (2025-12)
