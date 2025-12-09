@@ -80,7 +80,7 @@ function M.defaults()
         output_per_million = 0.60,
       },
       gemini = {
-        api_key = vim.env.GOOGLE_GENAI_KEY or vim.env.GOOGLE_API_KEY,
+        api_key = vim.env.GOOGLE_API_KEY or vim.env.GEMINI_API_KEY,
         model = "gemini-2.5-flash",
         base_url = "https://generativelanguage.googleapis.com/v1beta/models",
         input_per_million = 0.30,
