@@ -104,6 +104,113 @@ describe("translation core", function()
   end)
 end)
 
+describe("comment handling", function()
+  before_each(function()
+    metafrastis._reset_for_tests()
+  end)
+
+  it("strips line comments before translation and reapplies on replace", function()
+    local last_text
+    registry.register("capture", {
+      translate = function(_, payload)
+        last_text = payload.text
+        return payload.text .. " <t>"
+      end,
+      estimate_cost = function()
+        return 0
+      end,
+    })
+    metafrastis.config.provider = "capture"
+    metafrastis.config.replace = true
+
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_current_buf(bufnr)
+    vim.bo[bufnr].commentstring = "// %s"
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+      "// anthropicLLM implements the adk [model.LLM] interface using the Anthropic SDK.",
+    })
+
+    metafrastis.translate_range(bufnr, 0, 1, { target_lang = "es" })
+
+    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    assert.equals("// anthropicLLM implements the adk [model.LLM] interface using the Anthropic SDK. <t>", lines[1])
+    assert.equals(
+      "anthropicLLM implements the adk [model.LLM] interface using the Anthropic SDK.",
+      last_text
+    )
+  end)
+
+  it("strips block comments before translation and reapplies with suffix", function()
+    local last_text
+    registry.register("capture_block", {
+      translate = function(_, payload)
+        last_text = payload.text
+        return payload.text .. " <t>"
+      end,
+      estimate_cost = function()
+        return 0
+      end,
+    })
+    metafrastis.config.provider = "capture_block"
+    metafrastis.config.replace = true
+
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_current_buf(bufnr)
+    vim.bo[bufnr].commentstring = "/* %s */"
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+      "    /* Translate only the inner text */",
+    })
+
+    metafrastis.translate_range(bufnr, 0, 1, { target_lang = "en" })
+
+    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    assert.equals("    /* Translate only the inner text <t> */", lines[1])
+    assert.equals("Translate only the inner text", last_text)
+  end)
+
+  it("omits comment leaders in show_window output", function()
+    local last_text
+    local win_opts
+    package.loaded["snacks"] = {
+      notify = {
+        info = function() end,
+        warn = function() end,
+        notify = function() end,
+      },
+      win = function(opts)
+        win_opts = opts
+        return { show = function() end }
+      end,
+    }
+
+    registry.register("capture_window", {
+      translate = function(_, payload)
+        last_text = payload.text
+        return payload.text .. " <t>"
+      end,
+      estimate_cost = function()
+        return 0
+      end,
+    })
+    metafrastis.config.provider = "capture_window"
+    metafrastis.config.replace = false
+
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_current_buf(bufnr)
+    vim.bo[bufnr].commentstring = "// %s"
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "// hello world" })
+
+    metafrastis.translate_range(bufnr, 0, 1, { target_lang = "de", show_window = true })
+
+    assert.equals("hello world", last_text)
+    assert.truthy(win_opts)
+    assert.equals("hello world <t>", win_opts.text[1])
+
+    package.loaded["snacks"] = nil
+    require("metafrastis.ui")._reset_for_tests()
+  end)
+end)
+
 describe("commands", function()
   before_each(function()
     metafrastis._reset_for_tests()

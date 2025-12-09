@@ -4,8 +4,9 @@
 
 - This codebase is in early development. So you can plan for large-scale refactoring.
 - MUST READ the following files in the context of the Neovim Lua plugin:
-  - .agent/llms/snacks.nvim.xml
-  - .agent/llms/plenary.nvim.xml
+    - .agent/llms/neovim.io.xml
+    - .agent/llms/snacks.nvim.xml
+    - .agent/llms/plenary.nvim.xml
 
 This document provides essential information for contributing to metafrastis.nvim, a Neovim plugin built with Lua.
 

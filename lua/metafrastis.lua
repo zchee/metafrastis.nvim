@@ -3,6 +3,7 @@ local cache = require("metafrastis.cache")
 local http_builder = require("metafrastis.http")
 local registry = require("metafrastis.providers")
 local util = require("metafrastis.util")
+local comment = require("metafrastis.comment")
 local ui = require("metafrastis.ui")
 
 local provider_google = require("metafrastis.providers.google")
@@ -106,10 +107,24 @@ local function perform_translate(http_fn, text, opts)
   return translated, { cached = false, provider = provider_name }
 end
 
-local function apply_translation_output(buffer, start_line, end_line, translated, opts, meta)
+local function apply_translation_output(
+  buffer,
+  start_line,
+  end_line,
+  translated,
+  opts,
+  meta,
+  comment_info,
+  comment_parts
+)
   local should_replace = opts and opts.replace or M.config.replace
+  local translated_lines = util.split_lines(translated)
+
   if should_replace then
-    local new_lines = util.split_lines(translated)
+    if comment_parts and comment_info then
+      translated_lines = comment.reapply(translated_lines, comment_info, comment_parts)
+    end
+    local new_lines = translated_lines
     if #new_lines == 0 then
       new_lines = { "" }
     end
@@ -144,9 +159,11 @@ end
 function M.translate_range(bufnr, start_line, end_line, opts)
   local buffer = bufnr or vim.api.nvim_get_current_buf()
   local lines = vim.api.nvim_buf_get_lines(buffer, start_line, end_line, false)
-  local joined = table.concat(lines, "\n")
+  local stripped, comment_info, comment_parts =
+    comment.strip_lines(lines, vim.bo[buffer] and vim.bo[buffer].commentstring or nil)
+  local joined = table.concat(stripped, "\n")
   local translated, meta = M.translate(joined, opts)
-  apply_translation_output(buffer, start_line, end_line, translated, opts, meta)
+  apply_translation_output(buffer, start_line, end_line, translated, opts, meta, comment_info, comment_parts)
   return translated
 end
 
@@ -219,11 +236,13 @@ end
 function M.translate_range_async(bufnr, start_line, end_line, opts, callbacks)
   local buffer = bufnr or vim.api.nvim_get_current_buf()
   local lines = vim.api.nvim_buf_get_lines(buffer, start_line, end_line, false)
-  local joined = table.concat(lines, "\n")
+  local stripped, comment_info, comment_parts =
+    comment.strip_lines(lines, vim.bo[buffer] and vim.bo[buffer].commentstring or nil)
+  local joined = table.concat(stripped, "\n")
   local cb = callbacks or {}
   M.translate_async(joined, opts, {
     on_success = function(translated, meta)
-      apply_translation_output(buffer, start_line, end_line, translated, opts, meta)
+      apply_translation_output(buffer, start_line, end_line, translated, opts, meta, comment_info, comment_parts)
       if cb.on_success then
         cb.on_success(translated, meta)
       end

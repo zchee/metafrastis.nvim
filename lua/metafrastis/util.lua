@@ -17,7 +17,8 @@ end
 ---@return string[]
 function M.split_lines(lines)
   local result = {}
-  for line in lines:gmatch("([^\n]+)") do
+  local text = lines or ""
+  for line in (text .. "\n"):gmatch("(.-)\n") do
     table.insert(result, line)
   end
   return result
