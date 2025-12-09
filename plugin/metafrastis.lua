@@ -47,6 +47,7 @@ vim.api.nvim_create_user_command("MetafrastisTranslateUI", function(opts)
       source_lang = source,
       target_lang = target_lang,
       replace = replace,
+      show_window = not replace,
     }, {
       on_success = function(_, meta)
         local provider = meta and meta.provider or metafrastis.config.provider

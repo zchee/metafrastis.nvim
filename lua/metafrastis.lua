@@ -3,6 +3,7 @@ local cache = require("metafrastis.cache")
 local http_builder = require("metafrastis.http")
 local registry = require("metafrastis.providers")
 local util = require("metafrastis.util")
+local ui = require("metafrastis.ui")
 
 local provider_google = require("metafrastis.providers.google")
 local provider_deepl = require("metafrastis.providers.deepl")
@@ -105,6 +106,28 @@ local function perform_translate(http_fn, text, opts)
   return translated, { cached = false, provider = provider_name }
 end
 
+local function apply_translation_output(buffer, start_line, end_line, translated, opts, meta)
+  local should_replace = opts and opts.replace or M.config.replace
+  if should_replace then
+    local new_lines = util.split_lines(translated)
+    if #new_lines == 0 then
+      new_lines = { "" }
+    end
+    vim.api.nvim_buf_set_lines(buffer, start_line, end_line, false, new_lines)
+    return
+  end
+
+  if opts and opts.show_window then
+    ui.show_window(translated, meta, {
+      target_lang = opts.target_lang or M.config.target_lang,
+      source_lang = opts.source_lang or M.config.source_lang,
+    })
+    return
+  end
+
+  vim.api.nvim_echo({ { translated, "Normal" } }, false, {})
+end
+
 ---@param text string
 ---@param opts table|nil
 ---@return string, table|nil
@@ -122,17 +145,8 @@ function M.translate_range(bufnr, start_line, end_line, opts)
   local buffer = bufnr or vim.api.nvim_get_current_buf()
   local lines = vim.api.nvim_buf_get_lines(buffer, start_line, end_line, false)
   local joined = table.concat(lines, "\n")
-  local translated = M.translate(joined, opts)
-  local should_replace = opts and opts.replace or M.config.replace
-  if should_replace then
-    local new_lines = util.split_lines(translated)
-    if #new_lines == 0 then
-      new_lines = { "" }
-    end
-    vim.api.nvim_buf_set_lines(buffer, start_line, end_line, false, new_lines)
-  else
-    vim.api.nvim_echo({ { translated, "Normal" } }, false, {})
-  end
+  local translated, meta = M.translate(joined, opts)
+  apply_translation_output(buffer, start_line, end_line, translated, opts, meta)
   return translated
 end
 
@@ -209,16 +223,7 @@ function M.translate_range_async(bufnr, start_line, end_line, opts, callbacks)
   local cb = callbacks or {}
   M.translate_async(joined, opts, {
     on_success = function(translated, meta)
-      local should_replace = opts and opts.replace or M.config.replace
-      if should_replace then
-        local new_lines = util.split_lines(translated)
-        if #new_lines == 0 then
-          new_lines = { "" }
-        end
-        vim.api.nvim_buf_set_lines(buffer, start_line, end_line, false, new_lines)
-      else
-        vim.api.nvim_echo({ { translated, "Normal" } }, false, {})
-      end
+      apply_translation_output(buffer, start_line, end_line, translated, opts, meta)
       if cb.on_success then
         cb.on_success(translated, meta)
       end
