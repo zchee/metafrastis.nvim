@@ -33,6 +33,30 @@ describe("translation core", function()
     assert.equals("Hello [echo]->es", out)
   end)
 
+  it("normalizes carriage returns from providers", function()
+    registry.register("cr", {
+      translate = function()
+        return "hello\r\nworld\r"
+      end,
+      estimate_cost = function()
+        return 0
+      end,
+    })
+    metafrastis.config.provider = "cr"
+    metafrastis.config.replace = true
+
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_current_buf(bufnr)
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "stub" })
+
+    local out = metafrastis.translate_range(bufnr, 0, 1, { target_lang = "en" })
+    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+
+    assert.equals("hello\nworld", out)
+    assert.equals("hello", lines[1])
+    assert.equals("world", lines[2])
+  end)
+
   it("caches repeated calls", function()
     local calls = 0
     registry.register("count", {

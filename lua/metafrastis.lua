@@ -99,10 +99,15 @@ local function perform_translate(http_fn, text, opts)
   local key = cache.make_key(provider_name, source_lang, target_lang, text)
   local cached = cache.get(config_table.cache, key)
   if cached then
-    return cached, { cached = true, provider = provider_name }
+    local cleaned_cached = util.normalize_newlines(cached)
+    if cleaned_cached ~= cached then
+      cache.put(config_table.cache, key, cleaned_cached)
+    end
+    return cleaned_cached, { cached = true, provider = provider_name }
   end
 
   local translated = registry.translate(provider_name, http_fn, payload)
+  translated = util.normalize_newlines(translated)
   cache.put(config_table.cache, key, translated)
   return translated, { cached = false, provider = provider_name }
 end

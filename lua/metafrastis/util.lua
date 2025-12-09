@@ -24,4 +24,13 @@ function M.split_lines(lines)
   return result
 end
 
+---@param text string|nil
+---@return string
+function M.normalize_newlines(text)
+  if not text then
+    return ""
+  end
+  return (text:gsub("\r\n", "\n"):gsub("\r", ""))
+end
+
 return M
