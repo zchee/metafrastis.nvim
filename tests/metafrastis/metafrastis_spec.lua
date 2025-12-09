@@ -177,6 +177,68 @@ describe("async translation", function()
   end)
 end)
 
+describe("Snacks.win result window", function()
+  after_each(function()
+    package.loaded["snacks"] = nil
+    require("metafrastis.ui")._reset_for_tests()
+  end)
+
+  it("uses snacks.win when show_window is enabled", function()
+    metafrastis._reset_for_tests()
+    metafrastis.setup({ provider = "echo" })
+
+    local win_opts
+    package.loaded["snacks"] = {
+      notify = {
+        info = function() end,
+        warn = function() end,
+        notify = function() end,
+      },
+      win = function(opts)
+        win_opts = opts
+        return { show = function() end }
+      end,
+    }
+    require("metafrastis.ui")._reset_for_tests()
+
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_current_buf(bufnr)
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "Hello world" })
+
+    local echoed = false
+    local original_echo = vim.api.nvim_echo
+    vim.api.nvim_echo = function()
+      echoed = true
+    end
+
+    local done = false
+    metafrastis.translate_range_async(bufnr, 0, 1, {
+      target_lang = "es",
+      show_window = true,
+      replace = false,
+    }, {
+      on_success = function()
+        done = true
+      end,
+      on_error = function(err)
+        done = true
+        error(err)
+      end,
+    })
+
+    vim.wait(1000, function()
+      return done
+    end)
+
+    vim.api.nvim_echo = original_echo
+
+    assert.is_true(done)
+    assert.truthy(win_opts)
+    assert.equals("Hello world [echo]->es", win_opts.text[1])
+    assert.is_false(echoed)
+  end)
+end)
+
 describe("ui helper", function()
   local original_notify
 
@@ -239,5 +301,41 @@ describe("ui helper", function()
     end)
     assert.equals("es", received_default)
     assert.equals("ja", confirmed)
+  end)
+
+  it("renders translation in snacks.win when available", function()
+    local win_opts
+    package.loaded["snacks"] = {
+      notify = {
+        info = function() end,
+        warn = function() end,
+        notify = function() end,
+      },
+      win = function(opts)
+        win_opts = opts
+        return { show = function() end }
+      end,
+    }
+    local ui = require("metafrastis.ui")
+    ui._reset_for_tests()
+    ui.show_window("ciao", { provider = "echo", cached = true }, { target_lang = "es" })
+    assert.truthy(win_opts)
+    assert.equals("Metafrastis · es · echo · cache", win_opts.title)
+    assert.equals("ciao", win_opts.text[1])
+  end)
+
+  it("falls back to vim.echo when snacks missing", function()
+    package.loaded["snacks"] = nil
+    local ui = require("metafrastis.ui")
+    ui._reset_for_tests()
+    local original_echo = vim.api.nvim_echo
+    local echoed
+    vim.api.nvim_echo = function(chunks)
+      echoed = chunks
+    end
+    ui.show_window("hello", nil, { target_lang = "fr" })
+    vim.api.nvim_echo = original_echo
+    assert.truthy(echoed)
+    assert.equals("hello", echoed[1][1])
   end)
 end)
