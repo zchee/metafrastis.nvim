@@ -235,7 +235,69 @@ describe("Snacks.win result window", function()
     assert.is_true(done)
     assert.truthy(win_opts)
     assert.equals("Hello world [echo]->es", win_opts.text[1])
+    assert.equals("cursor", win_opts.relative)
+    assert.equals(1, win_opts.row)
+    assert.equals(0, win_opts.col)
+    assert.equals("rounded", win_opts.border)
+    assert.equals("center", win_opts.title_pos)
+    assert.equals("q: close · move cursor to dismiss", win_opts.footer)
+    assert.equals("left", win_opts.footer_pos)
+    assert.is_true(win_opts.wo.wrap)
     assert.is_false(echoed)
+  end)
+
+  it("closes snacks.win on CursorMoved", function()
+    metafrastis._reset_for_tests()
+    metafrastis.setup({ provider = "echo" })
+
+    local closed = 0
+    local win_opts
+    package.loaded["snacks"] = {
+      notify = {
+        info = function() end,
+        warn = function() end,
+        notify = function() end,
+      },
+      win = function(opts)
+        win_opts = opts
+        return {
+          win = 1000,
+          show = function() end,
+          close = function()
+            closed = closed + 1
+          end,
+        }
+      end,
+    }
+    require("metafrastis.ui")._reset_for_tests()
+
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_current_buf(bufnr)
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "Hello world" })
+
+    local done = false
+    metafrastis.translate_range_async(bufnr, 0, 1, {
+      target_lang = "es",
+      show_window = true,
+      replace = false,
+    }, {
+      on_success = function()
+        done = true
+      end,
+      on_error = function(err)
+        done = true
+        error(err)
+      end,
+    })
+
+    vim.wait(1000, function()
+      return done
+    end)
+
+    vim.api.nvim_exec_autocmds("CursorMoved", { modeline = false })
+
+    assert.is_true(done)
+    assert.equals(1, closed)
   end)
 end)
 
@@ -257,6 +319,7 @@ describe("ui helper", function()
     vim.notify = function(msg, level)
       table.insert(messages, { msg = msg, level = level })
     end
+    package.loaded["snacks"] = false
     local ui = require("metafrastis.ui")
     ui.notify("hello", "info", { title = "t" })
     assert.equals("hello", messages[1].msg)
@@ -322,6 +385,14 @@ describe("ui helper", function()
     assert.truthy(win_opts)
     assert.equals("Metafrastis · es · echo · cache", win_opts.title)
     assert.equals("ciao", win_opts.text[1])
+    assert.equals("cursor", win_opts.relative)
+    assert.equals(1, win_opts.row)
+    assert.equals(0, win_opts.col)
+    assert.equals("rounded", win_opts.border)
+    assert.equals("center", win_opts.title_pos)
+    assert.equals("q: close · move cursor to dismiss", win_opts.footer)
+    assert.equals("left", win_opts.footer_pos)
+    assert.is_true(win_opts.wo.wrap)
   end)
 
   it("falls back to vim.echo when snacks missing", function()
@@ -337,5 +408,33 @@ describe("ui helper", function()
     vim.api.nvim_echo = original_echo
     assert.truthy(echoed)
     assert.equals("hello", echoed[1][1])
+  end)
+
+  it("allows overriding cursor positioning defaults", function()
+    local win_opts
+    package.loaded["snacks"] = {
+      notify = {
+        info = function() end,
+        warn = function() end,
+        notify = function() end,
+      },
+      win = function(opts)
+        win_opts = opts
+        return { show = function() end }
+      end,
+    }
+    local ui = require("metafrastis.ui")
+    ui._reset_for_tests()
+    ui.show_window(
+      "hola",
+      nil,
+      { win = { relative = "editor", row = 5, col = 10, border = "double", wo = { wrap = false } } }
+    )
+    assert.truthy(win_opts)
+    assert.equals("editor", win_opts.relative)
+    assert.equals(5, win_opts.row)
+    assert.equals(10, win_opts.col)
+    assert.equals("double", win_opts.border)
+    assert.is_false(win_opts.wo.wrap)
   end)
 end)

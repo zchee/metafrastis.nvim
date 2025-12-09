@@ -3,6 +3,7 @@ local util = require("metafrastis.util")
 local M = {}
 
 local snacks_cache = nil
+local autoclose_group = vim.api.nvim_create_augroup("MetafrastisSnacksWin", { clear = false })
 
 local function get_snacks()
   if snacks_cache ~= nil then
@@ -11,6 +12,30 @@ local function get_snacks()
   local ok, mod = pcall(require, "snacks")
   snacks_cache = ok and mod or false
   return snacks_cache
+end
+
+local function close_snacks_win(win)
+  if not win then
+    return
+  end
+  local closed = false
+  if type(win.close) == "function" then
+    local ok = pcall(win.close, win)
+    closed = ok or closed
+  end
+  local winid
+  if type(win.win) == "number" then
+    winid = win.win
+  elseif type(win.winid) == "number" then
+    winid = win.winid
+  elseif type(win.id) == "number" then
+    winid = win.id
+  end
+  if winid and vim.api.nvim_win_is_valid(winid) then
+    local ok = pcall(vim.api.nvim_win_close, winid, true)
+    closed = ok or closed
+  end
+  return closed
 end
 
 function M.has_snacks()
@@ -93,7 +118,18 @@ function M.show_window(text, meta, opts)
       minimal = true,
       enter = false,
       keys = { q = "close" },
+      border = "rounded",
+      title_pos = "center",
+      footer = "q: close · move cursor to dismiss",
+      footer_pos = "left",
+      wo = { wrap = true },
+      relative = "cursor",
     }, opts and opts.win or {})
+
+    if win_opts.relative == "cursor" then
+      win_opts.row = win_opts.row or 1
+      win_opts.col = win_opts.col or 0
+    end
 
     if not win_opts.width then
       local max_len = 0
@@ -107,6 +143,21 @@ function M.show_window(text, meta, opts)
     end
 
     local win = snacks.win(win_opts)
+    local already_closed = false
+    if win then
+      vim.api.nvim_create_autocmd("CursorMoved", {
+        group = autoclose_group,
+        once = true,
+        desc = "metafrastis: close Snacks window after cursor move",
+        callback = function()
+          if already_closed then
+            return
+          end
+          already_closed = true
+          close_snacks_win(win)
+        end,
+      })
+    end
     if win and win.show then
       win:show()
     end
