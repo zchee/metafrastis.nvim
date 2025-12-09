@@ -52,9 +52,9 @@ describe("translation core", function()
     local out = metafrastis.translate_range(bufnr, 0, 1, { target_lang = "en" })
     local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
 
-    assert.equals("hello\nworld", out)
-    assert.equals("hello", lines[1])
-    assert.equals("world", lines[2])
+    assert.equals("hello world", out)
+    assert.equals(1, #lines)
+    assert.equals("hello world", lines[1])
   end)
 
   it("caches repeated calls", function()

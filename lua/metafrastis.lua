@@ -120,10 +120,17 @@ local function apply_translation_output(
   opts,
   meta,
   comment_info,
-  comment_parts
+  comment_parts,
+  original_lines
 )
   local should_replace = opts and opts.replace or M.config.replace
-  local translated_lines = util.split_lines(translated)
+  local translated_lines
+  if original_lines and #original_lines > 0 then
+    translated_lines = util.reflow_lines(translated, original_lines)
+  else
+    translated_lines = util.split_lines(translated)
+  end
+  local rendered = table.concat(translated_lines, "\n")
 
   if should_replace then
     if comment_parts and comment_info then
@@ -134,18 +141,19 @@ local function apply_translation_output(
       new_lines = { "" }
     end
     vim.api.nvim_buf_set_lines(buffer, start_line, end_line, false, new_lines)
-    return
+    return rendered
   end
 
   if opts and opts.show_window then
-    ui.show_window(translated, meta, {
+    ui.show_window(rendered, meta, {
       target_lang = opts.target_lang or M.config.target_lang,
       source_lang = opts.source_lang or M.config.source_lang,
     })
-    return
+    return rendered
   end
 
-  vim.api.nvim_echo({ { translated, "Normal" } }, false, {})
+  vim.api.nvim_echo({ { rendered, "Normal" } }, false, {})
+  return rendered
 end
 
 ---@param text string
@@ -168,8 +176,18 @@ function M.translate_range(bufnr, start_line, end_line, opts)
     comment.strip_lines(lines, vim.bo[buffer] and vim.bo[buffer].commentstring or nil)
   local joined = table.concat(stripped, "\n")
   local translated, meta = M.translate(joined, opts)
-  apply_translation_output(buffer, start_line, end_line, translated, opts, meta, comment_info, comment_parts)
-  return translated
+  local rendered = apply_translation_output(
+    buffer,
+    start_line,
+    end_line,
+    translated,
+    opts,
+    meta,
+    comment_info,
+    comment_parts,
+    stripped
+  )
+  return rendered or translated
 end
 
 ---@param opts table command opts
@@ -247,9 +265,19 @@ function M.translate_range_async(bufnr, start_line, end_line, opts, callbacks)
   local cb = callbacks or {}
   M.translate_async(joined, opts, {
     on_success = function(translated, meta)
-      apply_translation_output(buffer, start_line, end_line, translated, opts, meta, comment_info, comment_parts)
+      local rendered = apply_translation_output(
+        buffer,
+        start_line,
+        end_line,
+        translated,
+        opts,
+        meta,
+        comment_info,
+        comment_parts,
+        stripped
+      )
       if cb.on_success then
-        cb.on_success(translated, meta)
+        cb.on_success(rendered or translated, meta)
       end
     end,
     on_error = function(err)
