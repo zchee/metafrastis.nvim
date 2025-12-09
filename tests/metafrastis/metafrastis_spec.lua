@@ -119,6 +119,83 @@ describe("commands", function()
     local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
     assert.equals("Hello world [echo]->es", lines[0 + 1])
   end)
+
+  it("uses configured target_lang without prompting when args are omitted", function()
+    metafrastis._reset_for_tests()
+    metafrastis.setup({ provider = "echo", target_lang = "fr", source_lang = "en" })
+    vim.cmd("runtime plugin/metafrastis.lua")
+
+    package.loaded["snacks"] = false
+    local ui = require("metafrastis.ui")
+    ui._reset_for_tests()
+    local original_prompt = ui.prompt_target
+    local original_progress = ui.progress
+    local original_notify = ui.notify
+    local prompted = false
+    local done = false
+    ui.prompt_target = function()
+      prompted = true
+    end
+    ui.progress = function()
+      return function()
+        done = true
+      end
+    end
+    ui.notify = function() end
+
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_current_buf(bufnr)
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "Hello world" })
+
+    vim.cmd("1,1MetafrastisTranslateUI!")
+
+    vim.wait(1000, function()
+      return done
+    end)
+
+    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    assert.equals("Hello world [echo]->fr", lines[1])
+    assert.is_false(prompted)
+
+    ui.prompt_target = original_prompt
+    ui.progress = original_progress
+    ui.notify = original_notify
+  end)
+
+  it("prefers explicit args over configured languages", function()
+    metafrastis._reset_for_tests()
+    metafrastis.setup({ provider = "echo", target_lang = "fr", source_lang = "en" })
+    vim.cmd("runtime plugin/metafrastis.lua")
+
+    package.loaded["snacks"] = false
+    local ui = require("metafrastis.ui")
+    ui._reset_for_tests()
+    local original_progress = ui.progress
+    local original_notify = ui.notify
+    local done = false
+    ui.progress = function()
+      return function()
+        done = true
+      end
+    end
+    ui.notify = function() end
+
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_current_buf(bufnr)
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "Hello world" })
+
+    vim.cmd("1,1MetafrastisTranslateUI! es")
+
+    vim.wait(1000, function()
+      return done
+    end)
+
+    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    assert.equals("Hello world [echo]->es", lines[1])
+
+    ui.progress = original_progress
+    ui.notify = original_notify
+  end)
 end)
 
 describe("async translation", function()

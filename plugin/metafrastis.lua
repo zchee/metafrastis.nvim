@@ -32,7 +32,9 @@ end, { desc = "Clear translation cache" })
 
 vim.api.nvim_create_user_command("MetafrastisTranslateUI", function(opts)
   local args = opts.fargs or {}
-  local source, target = parse_lang_args(args)
+  local source_arg, target_arg = parse_lang_args(args)
+  local source = source_arg or metafrastis.config.source_lang
+  local target = target_arg or metafrastis.config.target_lang
   local replace = opts.bang or metafrastis.config.replace
   local start_line = (opts.line1 or 1) - 1
   local end_line = opts.line2 or vim.api.nvim_buf_line_count(0)
