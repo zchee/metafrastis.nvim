@@ -28,6 +28,10 @@
 ---@field http MetafrastisHttpConfig
 ---@field providers table<string, MetafrastisProviderConfig>
 ---@field pricing_last_review string
+---@field ui MetafrastisUiConfig
+
+---@class MetafrastisUiConfig
+---@field win table|nil
 
 local M = {}
 
@@ -56,6 +60,9 @@ function M.defaults()
     http = {
       timeout = 20000, -- milliseconds
       backend = "plenary",
+    },
+    ui = {
+      win = {},
     },
     providers = {
       echo = {

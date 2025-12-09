@@ -454,6 +454,99 @@ describe("Snacks.win result window", function()
     assert.is_false(echoed)
   end)
 
+  it("applies ui.win defaults from setup", function()
+    metafrastis._reset_for_tests()
+    metafrastis.setup({ provider = "echo", ui = { win = { width = 55, border = "single" } } })
+
+    local win_opts
+    package.loaded["snacks"] = {
+      notify = {
+        info = function() end,
+        warn = function() end,
+        notify = function() end,
+      },
+      win = function(opts)
+        win_opts = opts
+        return { show = function() end }
+      end,
+    }
+    require("metafrastis.ui")._reset_for_tests()
+
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_current_buf(bufnr)
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "Hello" })
+
+    local done = false
+    metafrastis.translate_range_async(bufnr, 0, 1, {
+      target_lang = "es",
+      show_window = true,
+      replace = false,
+    }, {
+      on_success = function()
+        done = true
+      end,
+      on_error = function(err)
+        done = true
+        error(err)
+      end,
+    })
+
+    vim.wait(1000, function()
+      return done
+    end)
+
+    assert.truthy(win_opts)
+    assert.equals(55, win_opts.width)
+    assert.equals("single", win_opts.border)
+  end)
+
+  it("allows call-specific win opts to override setup defaults", function()
+    metafrastis._reset_for_tests()
+    metafrastis.setup({ provider = "echo", ui = { win = { width = 80, border = "single" } } })
+
+    local win_opts
+    package.loaded["snacks"] = {
+      notify = {
+        info = function() end,
+        warn = function() end,
+        notify = function() end,
+      },
+      win = function(opts)
+        win_opts = opts
+        return { show = function() end }
+      end,
+    }
+    require("metafrastis.ui")._reset_for_tests()
+
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_current_buf(bufnr)
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "Hello" })
+
+    local done = false
+    metafrastis.translate_range_async(bufnr, 0, 1, {
+      target_lang = "es",
+      show_window = true,
+      replace = false,
+      win = { width = 30, border = "double" },
+    }, {
+      on_success = function()
+        done = true
+      end,
+      on_error = function(err)
+        done = true
+        error(err)
+      end,
+    })
+
+    vim.wait(1000, function()
+      return done
+    end)
+
+    assert.truthy(win_opts)
+    assert.equals(30, win_opts.width)
+    assert.equals("double", win_opts.border)
+  end)
+
   it("closes snacks.win on CursorMoved", function()
     metafrastis._reset_for_tests()
     metafrastis.setup({ provider = "echo" })

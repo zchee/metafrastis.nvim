@@ -131,6 +131,9 @@ local function apply_translation_output(
     translated_lines = util.split_lines(translated)
   end
   local rendered = table.concat(translated_lines, "\n")
+  local config_win = (M.config.ui and M.config.ui.win) or {}
+  local user_win = (opts and opts.win) or {}
+  local merged_win = vim.tbl_deep_extend("force", {}, config_win, user_win)
 
   if should_replace then
     if comment_parts and comment_info then
@@ -148,6 +151,7 @@ local function apply_translation_output(
     ui.show_window(rendered, meta, {
       target_lang = opts.target_lang or M.config.target_lang,
       source_lang = opts.source_lang or M.config.source_lang,
+      win = merged_win,
     })
     return rendered
   end
