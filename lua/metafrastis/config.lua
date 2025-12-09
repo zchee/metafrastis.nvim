@@ -27,6 +27,7 @@
 ---@field cache MetafrastisCacheConfig
 ---@field http MetafrastisHttpConfig
 ---@field providers table<string, MetafrastisProviderConfig>
+---@field ui { win?: { padding?: { top?: integer, bottom?: integer, left?: integer, right?: integer }, width?: integer|nil, height?: integer|nil } }
 ---@field pricing_last_review string
 ---@field ui MetafrastisUiConfig
 
@@ -100,6 +101,13 @@ function M.defaults()
         input_per_million = 0.15,
         output_per_million = 0.60,
         referer = "https://github.com/zchee/metafrastis.nvim",
+      },
+    },
+    ui = {
+      win = {
+        padding = { top = 0, bottom = 0, left = 0, right = 0 },
+        width = nil,
+        height = nil,
       },
     },
   }

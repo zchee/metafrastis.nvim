@@ -547,6 +547,63 @@ describe("Snacks.win result window", function()
     assert.equals("double", win_opts.border)
   end)
 
+  it("applies padding from setup defaults", function()
+    metafrastis._reset_for_tests()
+    metafrastis.setup({
+      provider = "echo",
+      ui = {
+        win = {
+          padding = { top = 1, bottom = 1, left = 2, right = 2 },
+        },
+      },
+    })
+
+    local win_opts
+    package.loaded["snacks"] = {
+      notify = {
+        info = function() end,
+        warn = function() end,
+        notify = function() end,
+      },
+      win = function(opts)
+        win_opts = opts
+        return { show = function() end }
+      end,
+    }
+    require("metafrastis.ui")._reset_for_tests()
+
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_current_buf(bufnr)
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "Hello" })
+
+    local done = false
+    metafrastis.translate_range_async(bufnr, 0, 1, {
+      target_lang = "es",
+      show_window = true,
+      replace = false,
+    }, {
+      on_success = function()
+        done = true
+      end,
+      on_error = function(err)
+        done = true
+        error(err)
+      end,
+    })
+
+    vim.wait(1000, function()
+      return done
+    end)
+
+    assert.truthy(win_opts)
+    assert.equals("    ", win_opts.text[1])
+    assert.equals("  Hello [echo]->es  ", win_opts.text[2])
+    assert.equals("    ", win_opts.text[3])
+
+    package.loaded["snacks"] = nil
+    require("metafrastis.ui")._reset_for_tests()
+  end)
+
   it("closes snacks.win on CursorMoved", function()
     metafrastis._reset_for_tests()
     metafrastis.setup({ provider = "echo" })
@@ -737,5 +794,42 @@ describe("ui helper", function()
     assert.equals(10, win_opts.col)
     assert.equals("double", win_opts.border)
     assert.is_false(win_opts.wo.wrap)
+  end)
+
+  it("applies padding from config when showing window", function()
+    local win_opts
+    package.loaded["snacks"] = {
+      notify = {
+        info = function() end,
+        warn = function() end,
+        notify = function() end,
+      },
+      win = function(opts)
+        win_opts = opts
+        return { show = function() end }
+      end,
+    }
+    local ui = require("metafrastis.ui")
+    ui._reset_for_tests()
+
+    metafrastis._reset_for_tests()
+    metafrastis.setup({
+      provider = "echo",
+      ui = {
+        win = {
+          padding = { top = 1, bottom = 1, left = 2, right = 2 },
+        },
+      },
+    })
+
+    ui.show_window("ciao", { provider = "echo" }, { win = {} })
+
+    assert.truthy(win_opts)
+    assert.equals("    ", win_opts.text[1])
+    assert.equals("  ciao  ", win_opts.text[2])
+    assert.equals("    ", win_opts.text[3])
+
+    package.loaded["snacks"] = nil
+    ui._reset_for_tests()
   end)
 end)

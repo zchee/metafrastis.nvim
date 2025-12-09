@@ -4,6 +4,7 @@ local M = {}
 
 local snacks_cache = nil
 local autoclose_group = vim.api.nvim_create_augroup("MetafrastisSnacksWin", { clear = false })
+local default_win_opts = {}
 
 local function get_snacks()
   if snacks_cache ~= nil then
@@ -99,6 +100,34 @@ local function make_title(meta, opts)
   return table.concat(parts, " · ")
 end
 
+function M.set_defaults(win_opts)
+  default_win_opts = win_opts or {}
+end
+
+local function apply_padding(lines, padding)
+  if not padding then
+    return lines
+  end
+  local top = padding.top or 0
+  local bottom = padding.bottom or 0
+  local left = padding.left or 0
+  local right = padding.right or 0
+  local pad_left = left > 0 and string.rep(" ", left) or ""
+  local pad_right = right > 0 and string.rep(" ", right) or ""
+
+  local padded = {}
+  for _ = 1, top do
+    table.insert(padded, pad_left .. pad_right)
+  end
+  for _, line in ipairs(lines) do
+    table.insert(padded, pad_left .. line .. pad_right)
+  end
+  for _ = 1, bottom do
+    table.insert(padded, pad_left .. pad_right)
+  end
+  return padded
+end
+
 ---@param text string|string[]
 ---@param meta table|nil
 ---@param opts table|nil
@@ -108,6 +137,16 @@ function M.show_window(text, meta, opts)
   if #lines == 0 then
     lines = { "" }
   end
+  local merged_win = vim.tbl_deep_extend("force", {}, default_win_opts or {}, opts and opts.win or {})
+  local padding = merged_win.padding or (opts and opts.padding) or nil
+  if not padding then
+    local ok, core = pcall(require, "metafrastis")
+    if ok and core.config and core.config.ui and core.config.ui.win then
+      padding = core.config.ui.win.padding
+    end
+  end
+
+  lines = apply_padding(lines, padding)
 
   local title = make_title(meta, opts)
 
@@ -124,7 +163,7 @@ function M.show_window(text, meta, opts)
       footer_pos = "left",
       wo = { wrap = true },
       relative = "cursor",
-    }, opts and opts.win or {})
+    }, merged_win)
 
     if win_opts.relative == "cursor" then
       win_opts.row = win_opts.row or 1
@@ -182,6 +221,7 @@ end
 -- Test helper
 function M._reset_for_tests()
   snacks_cache = nil
+  default_win_opts = {}
 end
 
 return M

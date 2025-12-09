@@ -57,6 +57,7 @@ function M.setup(opts)
   M.config = merged
   M.http = http_builder.build(merged.http)
   M.http_async = http_builder.build_async(merged.http)
+  ui.set_defaults(merged.ui and merged.ui.win or {})
 end
 
 local function perform_translate(http_fn, text, opts)
@@ -152,6 +153,7 @@ local function apply_translation_output(
       target_lang = opts.target_lang or M.config.target_lang,
       source_lang = opts.source_lang or M.config.source_lang,
       win = merged_win,
+      padding = merged_win and merged_win.padding or nil,
     })
     return rendered
   end
