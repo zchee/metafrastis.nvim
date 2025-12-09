@@ -68,7 +68,7 @@ function M.defaults()
         price_per_million_chars = 20.0,
       },
       deepl = {
-        api_key = vim.env.DEEPL_API_KEY,
+        api_key = vim.env.DEEPL_AUTH_KEY,
         base_url = "https://api.deepl.com/v2/translate",
         price_per_million_chars = 25.0,
       },
