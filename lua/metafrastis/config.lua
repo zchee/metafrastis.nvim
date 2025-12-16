@@ -29,7 +29,6 @@
 ---@field providers table<string, MetafrastisProviderConfig>
 ---@field ui { win?: { padding?: { top?: integer, bottom?: integer, left?: integer, right?: integer }, width?: integer|nil, height?: integer|nil } }
 ---@field pricing_last_review string
----@field ui MetafrastisUiConfig
 
 ---@class MetafrastisUiConfig
 ---@field win table|nil
@@ -61,9 +60,6 @@ function M.defaults()
     http = {
       timeout = 20000, -- milliseconds
       backend = "plenary",
-    },
-    ui = {
-      win = {},
     },
     providers = {
       echo = {
