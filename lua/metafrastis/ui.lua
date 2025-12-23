@@ -86,13 +86,16 @@ function M.progress(msg, opts)
 end
 
 local function make_title(meta, opts)
-  local base = (opts and opts.title) or "Metafrastis"
+  local base = (opts and opts.title)
   local parts = { base }
   if opts and opts.target_lang then
     table.insert(parts, opts.target_lang)
   end
   if meta and meta.provider then
     table.insert(parts, meta.provider)
+  end
+  if meta and meta.icon then
+    table.insert(parts, meta.icon)
   end
   if meta and meta.cached then
     table.insert(parts, "cache")

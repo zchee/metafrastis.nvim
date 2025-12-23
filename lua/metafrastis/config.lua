@@ -20,6 +20,7 @@
 
 ---@class MetafrastisConfig
 ---@field provider string
+---@field icon string
 ---@field target_lang string
 ---@field source_lang string|nil
 ---@field replace boolean
@@ -43,6 +44,7 @@ end
 function M.defaults()
   return {
     provider = "openai",
+    icon = "󰊿",
     target_lang = "en",
     source_lang = nil,
     replace = false,

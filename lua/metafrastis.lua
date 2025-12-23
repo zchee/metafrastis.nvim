@@ -63,11 +63,12 @@ end
 local function perform_translate(http_fn, text, opts)
   assert(type(text) == "string", "text must be a string")
   if text == "" then
-    return "", { cached = false, provider = M.config.provider }
+    return "", { cached = false, provider = M.config.provider, icon = M.config.icon }
   end
   local options = opts or {}
   local config_table = M.config
   local provider_name = options.provider or config_table.provider
+  local provider_icon = options.icon or config_table.icon
   local ok, err = validate_provider(provider_name, config_table)
   if not ok then
     vim.notify(string.format("metafrastis: %s; using echo provider", err), vim.log.levels.WARN)
@@ -104,13 +105,13 @@ local function perform_translate(http_fn, text, opts)
     if cleaned_cached ~= cached then
       cache.put(config_table.cache, key, cleaned_cached)
     end
-    return cleaned_cached, { cached = true, provider = provider_name }
+    return cleaned_cached, { cached = true, provider = provider_name, icon = provider_icon }
   end
 
   local translated = registry.translate(provider_name, http_fn, payload)
   translated = util.normalize_newlines(translated)
   cache.put(config_table.cache, key, translated)
-  return translated, { cached = false, provider = provider_name }
+  return translated, { cached = false, provider = provider_name, icon = provider_icon }
 end
 
 local function apply_translation_output(buffer, start_line, end_line, translated, opts, meta, info, parts, original_lines)
