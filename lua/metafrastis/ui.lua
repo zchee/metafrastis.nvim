@@ -3,8 +3,9 @@ local util = require("metafrastis.util")
 local M = {}
 
 local snacks_cache = nil
-local autoclose_group = vim.api.nvim_create_augroup("MetafrastisSnacksWin", { clear = false })
+local autoclose_group = vim.api.nvim_create_augroup("MetafrastisSnacksWin", { clear = true })
 local default_win_opts = {}
+local active_win = nil
 
 local function get_snacks()
   if snacks_cache ~= nil then
@@ -15,28 +16,18 @@ local function get_snacks()
   return snacks_cache
 end
 
-local function close_snacks_win(win)
+---Close the active window if one exists.
+local function close_active_win()
+  local win = active_win
+  active_win = nil
   if not win then
     return
   end
-  local closed = false
-  if type(win.close) == "function" then
-    local ok = pcall(win.close, win)
-    closed = ok or closed
-  end
-  local winid
-  if type(win.win) == "number" then
-    winid = win.win
-  elseif type(win.winid) == "number" then
-    winid = win.winid
-  elseif type(win.id) == "number" then
-    winid = win.id
-  end
-  if winid and vim.api.nvim_win_is_valid(winid) then
-    local ok = pcall(vim.api.nvim_win_close, winid, true)
-    closed = ok or closed
-  end
-  return closed
+  pcall(function()
+    if type(win.close) == "function" then
+      win:close()
+    end
+  end)
 end
 
 function M.has_snacks()
@@ -85,17 +76,24 @@ function M.progress(msg, opts)
   end
 end
 
+---Build the window title string.
+---@param meta table|nil
+---@param opts table|nil
+---@return string
 local function make_title(meta, opts)
-  local base = (opts and opts.title)
-  local parts = { base }
+  local parts = {}
+  if meta and meta.icon then
+    table.insert(parts, meta.icon)
+  end
+  local base = opts and opts.title
+  if base then
+    table.insert(parts, base)
+  end
   if opts and opts.target_lang then
     table.insert(parts, opts.target_lang)
   end
   if meta and meta.provider then
     table.insert(parts, meta.provider)
-  end
-  if meta and meta.icon then
-    table.insert(parts, meta.icon)
   end
   if meta and meta.cached then
     table.insert(parts, "cache")
@@ -103,10 +101,21 @@ local function make_title(meta, opts)
   return table.concat(parts, " · ")
 end
 
+---Compute the display width of a string (handles multibyte/CJK correctly).
+---@param s string
+---@return integer
+local function display_width(s)
+  return vim.fn.strdisplaywidth(s)
+end
+
 function M.set_defaults(win_opts)
   default_win_opts = win_opts or {}
 end
 
+---Apply padding to lines by prepending/appending spaces and blank lines.
+---@param lines string[]
+---@param padding table|nil
+---@return string[]
 local function apply_padding(lines, padding)
   if not padding then
     return lines
@@ -135,6 +144,9 @@ end
 ---@param meta table|nil
 ---@param opts table|nil
 function M.show_window(text, meta, opts)
+  -- Close any previously open translation window.
+  close_active_win()
+
   local snacks = get_snacks()
   local lines = type(text) == "table" and text or util.split_lines(text or "")
   if #lines == 0 then
@@ -159,12 +171,33 @@ function M.show_window(text, meta, opts)
       title = title,
       minimal = true,
       enter = false,
-      keys = { q = "close" },
+      keys = {
+        q = "close",
+        ["<Esc>"] = "close",
+        y = {
+          function(self)
+            local buf_lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
+            local content = table.concat(buf_lines, "\n")
+            vim.fn.setreg("+", content)
+            vim.fn.setreg('"', content)
+            M.notify("Copied to clipboard", "info")
+          end,
+          desc = "yank",
+        },
+      },
       border = "rounded",
       title_pos = "center",
-      footer = "q: close · move cursor to dismiss",
-      footer_pos = "left",
-      wo = { wrap = true },
+      footer = "q/Esc: close · y: yank · move cursor to dismiss",
+      footer_pos = "center",
+      wo = {
+        wrap = true,
+        linebreak = true,
+        conceallevel = 2,
+      },
+      bo = {
+        filetype = "markdown",
+      },
+      backdrop = 40,
       relative = "cursor",
     }, merged_win)
 
@@ -174,34 +207,32 @@ function M.show_window(text, meta, opts)
     end
 
     if not win_opts.width then
-      local max_len = 0
+      local max_w = 0
       for _, line in ipairs(lines) do
-        max_len = math.max(max_len, #line)
+        max_w = math.max(max_w, display_width(line))
       end
-      win_opts.width = math.min(120, math.max(20, max_len + 4))
+      local editor_w = vim.o.columns
+      win_opts.width = math.min(math.floor(editor_w * 0.8), math.max(30, max_w + 2))
     end
     if not win_opts.height then
-      win_opts.height = math.min(#lines + 2, 20)
+      local editor_h = vim.o.lines - vim.o.cmdheight - 2
+      win_opts.height = math.min(#lines, math.floor(editor_h * 0.6))
     end
 
     local win = snacks.win(win_opts)
-    local already_closed = false
     if win then
-      vim.api.nvim_create_autocmd("CursorMoved", {
+      active_win = win
+      vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI", "BufLeave" }, {
         group = autoclose_group,
         once = true,
-        desc = "metafrastis: close Snacks window after cursor move",
+        desc = "metafrastis: close translation window",
         callback = function()
-          if already_closed then
-            return
-          end
-          already_closed = true
-          close_snacks_win(win)
+          close_active_win()
         end,
       })
-    end
-    if win and win.show then
-      win:show()
+      if win.show then
+        win:show()
+      end
     end
     return win
   end
@@ -225,6 +256,7 @@ end
 function M._reset_for_tests()
   snacks_cache = nil
   default_win_opts = {}
+  active_win = nil
 end
 
 return M
