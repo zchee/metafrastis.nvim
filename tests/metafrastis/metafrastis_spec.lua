@@ -158,10 +158,7 @@ describe("comment handling", function()
 
     local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
     assert.equals("// anthropicLLM implements the adk [model.LLM] interface using the Anthropic SDK. <t>", lines[1])
-    assert.equals(
-      "anthropicLLM implements the adk [model.LLM] interface using the Anthropic SDK.",
-      last_text
-    )
+    assert.equals("anthropicLLM implements the adk [model.LLM] interface using the Anthropic SDK.", last_text)
   end)
 
   it("strips block comments before translation and reapplies with suffix", function()
@@ -243,12 +240,33 @@ describe("commands", function()
   end)
 
   it("replaces selected lines when bang is used", function()
+    package.loaded["snacks"] = false
+    local test_ui = require("metafrastis.ui")
+    test_ui._reset_for_tests()
+    local original_progress = test_ui.progress
+    local original_notify = test_ui.notify
+    local done = false
+    test_ui.progress = function()
+      return function()
+        done = true
+      end
+    end
+    test_ui.notify = function() end
+
     local bufnr = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_set_current_buf(bufnr)
     vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "Hello world" })
     vim.cmd("1,1MetafrastisTranslate! en es")
+
+    vim.wait(1000, function()
+      return done
+    end)
+
     local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-    assert.equals("Hello world [echo]->es", lines[0 + 1])
+    assert.equals("Hello world [echo]->es", lines[1])
+
+    test_ui.progress = original_progress
+    test_ui.notify = original_notify
   end)
 
   it("uses configured target_lang without prompting when args are omitted", function()
@@ -257,28 +275,28 @@ describe("commands", function()
     vim.cmd("runtime plugin/metafrastis.lua")
 
     package.loaded["snacks"] = false
-    local ui = require("metafrastis.ui")
-    ui._reset_for_tests()
-    local original_prompt = ui.prompt_target
-    local original_progress = ui.progress
-    local original_notify = ui.notify
+    local test_ui = require("metafrastis.ui")
+    test_ui._reset_for_tests()
+    local original_prompt = test_ui.prompt_target
+    local original_progress = test_ui.progress
+    local original_notify = test_ui.notify
     local prompted = false
     local done = false
-    ui.prompt_target = function()
+    test_ui.prompt_target = function()
       prompted = true
     end
-    ui.progress = function()
+    test_ui.progress = function()
       return function()
         done = true
       end
     end
-    ui.notify = function() end
+    test_ui.notify = function() end
 
     local bufnr = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_set_current_buf(bufnr)
     vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "Hello world" })
 
-    vim.cmd("1,1MetafrastisTranslateUI!")
+    vim.cmd("1,1MetafrastisTranslate!")
 
     vim.wait(1000, function()
       return done
@@ -288,9 +306,9 @@ describe("commands", function()
     assert.equals("Hello world [echo]->fr", lines[1])
     assert.is_false(prompted)
 
-    ui.prompt_target = original_prompt
-    ui.progress = original_progress
-    ui.notify = original_notify
+    test_ui.prompt_target = original_prompt
+    test_ui.progress = original_progress
+    test_ui.notify = original_notify
   end)
 
   it("prefers explicit args over configured languages", function()
@@ -299,23 +317,23 @@ describe("commands", function()
     vim.cmd("runtime plugin/metafrastis.lua")
 
     package.loaded["snacks"] = false
-    local ui = require("metafrastis.ui")
-    ui._reset_for_tests()
-    local original_progress = ui.progress
-    local original_notify = ui.notify
+    local test_ui = require("metafrastis.ui")
+    test_ui._reset_for_tests()
+    local original_progress = test_ui.progress
+    local original_notify = test_ui.notify
     local done = false
-    ui.progress = function()
+    test_ui.progress = function()
       return function()
         done = true
       end
     end
-    ui.notify = function() end
+    test_ui.notify = function() end
 
     local bufnr = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_set_current_buf(bufnr)
     vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "Hello world" })
 
-    vim.cmd("1,1MetafrastisTranslateUI! es")
+    vim.cmd("1,1MetafrastisTranslate! es")
 
     vim.wait(1000, function()
       return done
@@ -324,8 +342,8 @@ describe("commands", function()
     local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
     assert.equals("Hello world [echo]->es", lines[1])
 
-    ui.progress = original_progress
-    ui.notify = original_notify
+    test_ui.progress = original_progress
+    test_ui.notify = original_notify
   end)
 end)
 
@@ -382,6 +400,189 @@ describe("async translation", function()
     assert.equals("ping#1", results[1])
     assert.equals("ping#1", results[2])
     assert.equals(1, calls)
+  end)
+end)
+
+describe("visual selection translation", function()
+  before_each(function()
+    metafrastis._reset_for_tests()
+    metafrastis.setup({ provider = "echo" })
+  end)
+
+  ---Helper: set visual marks on a buffer.
+  ---@param bufnr integer
+  ---@param start_row integer 1-indexed
+  ---@param start_col integer 0-indexed
+  ---@param end_row integer 1-indexed
+  ---@param end_col integer 0-indexed
+  local function set_visual_marks(bufnr, start_row, start_col, end_row, end_col)
+    vim.api.nvim_buf_set_mark(bufnr, "<", start_row, start_col, {})
+    vim.api.nvim_buf_set_mark(bufnr, ">", end_row, end_col, {})
+  end
+
+  it("translates linewise visual selection and replaces", function()
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_current_buf(bufnr)
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "Hello world", "second line" })
+    set_visual_marks(bufnr, 1, 0, 1, 10)
+
+    local result = metafrastis.translate_selection(bufnr, "V", { target_lang = "es", replace = true })
+
+    assert.equals("Hello world [echo]->es", result)
+    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    assert.equals("Hello world [echo]->es", lines[1])
+    assert.equals("second line", lines[2])
+  end)
+
+  it("translates linewise selection spanning multiple lines", function()
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_current_buf(bufnr)
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "first", "second", "third" })
+    set_visual_marks(bufnr, 1, 0, 2, 5)
+
+    local result = metafrastis.translate_selection(bufnr, "V", { target_lang = "ja", replace = true })
+
+    assert.is_string(result)
+    assert.truthy(result:len() > 0)
+    -- Echo provider appends "[echo]->ja" to the joined text.
+    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    local found = false
+    for _, line in ipairs(lines) do
+      if line:find("%[echo%]") then
+        found = true
+        break
+      end
+    end
+    assert.is_true(found, "expected [echo] in buffer lines: " .. vim.inspect(lines))
+    assert.equals("third", lines[#lines])
+  end)
+
+  it("translates charwise visual selection and replaces", function()
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_current_buf(bufnr)
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "Hello world" })
+    -- Select "world" (col 6..10 inclusive in mark, which becomes 6..11 exclusive)
+    set_visual_marks(bufnr, 1, 6, 1, 10)
+
+    local result = metafrastis.translate_selection(bufnr, "v", { target_lang = "fr", replace = true })
+
+    assert.equals("world [echo]->fr", result)
+    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    assert.equals("Hello world [echo]->fr", lines[1])
+  end)
+
+  it("returns empty string for empty selection", function()
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_current_buf(bufnr)
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "" })
+    set_visual_marks(bufnr, 1, 0, 1, 0)
+
+    local result = metafrastis.translate_selection(bufnr, "V", { target_lang = "de", replace = true })
+
+    assert.equals("", result)
+  end)
+
+  it("shows window instead of replacing when replace is false", function()
+    local win_opts
+    package.loaded["snacks"] = {
+      notify = {
+        info = function() end,
+        warn = function() end,
+        notify = function() end,
+      },
+      win = function(opts)
+        win_opts = opts
+        return { show = function() end }
+      end,
+    }
+    require("metafrastis.ui")._reset_for_tests()
+
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_current_buf(bufnr)
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "Hello world" })
+    set_visual_marks(bufnr, 1, 0, 1, 10)
+
+    metafrastis.translate_selection(bufnr, "V", {
+      target_lang = "es",
+      replace = false,
+      show_window = true,
+    })
+
+    assert.truthy(win_opts)
+    assert.equals("Hello world [echo]->es", win_opts.text[1])
+
+    package.loaded["snacks"] = nil
+    require("metafrastis.ui")._reset_for_tests()
+  end)
+
+  it("async translates and replaces visual selection", function()
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_current_buf(bufnr)
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "Async test" })
+    set_visual_marks(bufnr, 1, 0, 1, 9)
+
+    local done = false
+    local result
+    metafrastis.translate_selection_async(bufnr, "V", { target_lang = "ko", replace = true }, {
+      on_success = function(out)
+        result = out
+        done = true
+      end,
+      on_error = function(err)
+        done = true
+        error(err)
+      end,
+    })
+
+    vim.wait(1000, function()
+      return done
+    end)
+
+    assert.is_true(done)
+    assert.equals("Async test [echo]->ko", result)
+    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    assert.equals("Async test [echo]->ko", lines[1])
+  end)
+
+  it("async returns empty for empty selection", function()
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_current_buf(bufnr)
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "" })
+    set_visual_marks(bufnr, 1, 0, 1, 0)
+
+    local done = false
+    local result
+    metafrastis.translate_selection_async(bufnr, "V", { target_lang = "zh" }, {
+      on_success = function(out)
+        result = out
+        done = true
+      end,
+    })
+
+    vim.wait(1000, function()
+      return done
+    end)
+
+    assert.is_true(done)
+    assert.equals("", result)
+  end)
+
+  it("translates charwise selection spanning multiple lines", function()
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_current_buf(bufnr)
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "Hello world", "foo bar" })
+    -- Select from "world" on line 1 to "foo" on line 2 (charwise)
+    set_visual_marks(bufnr, 1, 6, 2, 2)
+
+    local result = metafrastis.translate_selection(bufnr, "v", { target_lang = "de", replace = true })
+
+    assert.is_string(result)
+    assert.truthy(result:len() > 0)
+    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    -- The prefix "Hello " and suffix " bar" should be preserved.
+    local all = table.concat(lines, "\n")
+    assert.truthy(all:find("Hello"), "expected 'Hello' prefix preserved: " .. vim.inspect(lines))
+    assert.truthy(all:find("bar"), "expected 'bar' suffix preserved: " .. vim.inspect(lines))
   end)
 end)
 
@@ -448,9 +649,11 @@ describe("Snacks.win result window", function()
     assert.equals(0, win_opts.col)
     assert.equals("rounded", win_opts.border)
     assert.equals("center", win_opts.title_pos)
-    assert.equals("q: close · move cursor to dismiss", win_opts.footer)
-    assert.equals("left", win_opts.footer_pos)
+    assert.equals("q/Esc: close · y: yank · move cursor to dismiss", win_opts.footer)
+    assert.equals("center", win_opts.footer_pos)
     assert.is_true(win_opts.wo.wrap)
+    assert.is_true(win_opts.wo.linebreak)
+    assert.equals("markdown", win_opts.bo.filetype)
     assert.is_false(echoed)
   end)
 
@@ -741,16 +944,18 @@ describe("ui helper", function()
     ui._reset_for_tests()
     ui.show_window("ciao", { provider = "echo", cached = true }, { target_lang = "es" })
     assert.truthy(win_opts)
-    assert.equals("Metafrastis · es · echo · cache", win_opts.title)
+    assert.equals("es · echo · cache", win_opts.title)
     assert.equals("ciao", win_opts.text[1])
     assert.equals("cursor", win_opts.relative)
     assert.equals(1, win_opts.row)
     assert.equals(0, win_opts.col)
     assert.equals("rounded", win_opts.border)
     assert.equals("center", win_opts.title_pos)
-    assert.equals("q: close · move cursor to dismiss", win_opts.footer)
-    assert.equals("left", win_opts.footer_pos)
+    assert.equals("q/Esc: close · y: yank · move cursor to dismiss", win_opts.footer)
+    assert.equals("center", win_opts.footer_pos)
     assert.is_true(win_opts.wo.wrap)
+    assert.is_true(win_opts.wo.linebreak)
+    assert.equals("markdown", win_opts.bo.filetype)
   end)
 
   it("falls back to vim.echo when snacks missing", function()

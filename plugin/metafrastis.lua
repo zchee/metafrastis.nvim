@@ -1,19 +1,30 @@
 local metafrastis = require("metafrastis")
-local ui = require("metafrastis.ui")
 
-local function parse_lang_args(args)
-  local source
-  local target
-  if #args == 1 then
-    target = args[1]
-  elseif #args >= 2 then
-    source = args[1]
-    target = args[2]
+---Detect charwise/blockwise visual mode when command is invoked from a visual selection.
+---Returns the visual mode string ("v" or "\22") if the command range matches
+---the visual marks, nil otherwise.
+---@param opts table Command opts from nvim_create_user_command callback.
+---@return string|nil
+local function detect_charwise_visual(opts)
+  if opts.range ~= 2 then
+    return nil
   end
-  return source, target
+  local vmode = vim.fn.visualmode()
+  if vmode ~= "v" and vmode ~= "\22" and vmode ~= "" then
+    return nil
+  end
+  -- Verify the command range matches the visual marks to confirm this was
+  -- actually invoked from a visual selection (not a manual line range).
+  local mark_start = vim.fn.line("'<")
+  local mark_end = vim.fn.line("'>")
+  if mark_start == opts.line1 and mark_end == opts.line2 then
+    return vmode
+  end
+  return nil
 end
 
 vim.api.nvim_create_user_command("MetafrastisTranslate", function(opts)
+  opts.visual_mode = detect_charwise_visual(opts)
   metafrastis.command(opts)
 end, {
   range = true,
@@ -29,57 +40,3 @@ vim.api.nvim_create_user_command("MetafrastisCacheClear", function()
   metafrastis.clear_cache()
   vim.notify("metafrastis: cache cleared", vim.log.levels.INFO)
 end, { desc = "Clear translation cache" })
-
-vim.api.nvim_create_user_command("MetafrastisTranslateUI", function(opts)
-  local args = opts.fargs or {}
-  local source_arg, target_arg = parse_lang_args(args)
-  local source = source_arg or metafrastis.config.source_lang
-  local target = target_arg or metafrastis.config.target_lang
-  local replace = opts.bang or metafrastis.config.replace
-  local start_line = (opts.line1 or 1) - 1
-  local end_line = opts.line2 or vim.api.nvim_buf_line_count(0)
-
-  local function run_with_target(target_lang)
-    if not target_lang or target_lang == "" then
-      ui.notify("metafrastis: target language required", "warn", { title = "Metafrastis" })
-      return
-    end
-    local done = ui.progress("Translating...", { title = "Metafrastis" })
-    metafrastis.translate_range_async(0, start_line, end_line, {
-      source_lang = source,
-      target_lang = target_lang,
-      replace = replace,
-      show_window = not replace,
-    }, {
-      on_success = function(_, meta)
-        local provider = meta and meta.provider or metafrastis.config.provider
-        local suffix = meta and meta.cached and " (cache)" or ""
-        done(string.format("Translated via %s%s", provider, suffix), "info")
-      end,
-      on_error = function(err)
-        done("Translation failed: " .. tostring(err), "error")
-      end,
-    })
-  end
-
-  if target and target ~= "" then
-    run_with_target(target)
-    return
-  end
-
-  ui.prompt_target(metafrastis.config.target_lang, function(value)
-    if value and value ~= "" then
-      run_with_target(value)
-    else
-      ui.notify("metafrastis: target language required", "warn", { title = "Metafrastis" })
-    end
-  end)
-end, {
-  range = true,
-  nargs = "*",
-  bang = true,
-  desc = "Translate selection or buffer using Snacks UI and async backend",
-  complete = function()
-    return { "en", "es", "fr", "de", "ja", "ko", "zh" }
-  end,
-})

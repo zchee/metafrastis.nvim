@@ -114,7 +114,17 @@ local function perform_translate(http_fn, text, opts)
   return translated, { cached = false, provider = provider_name, icon = provider_icon }
 end
 
-local function apply_translation_output(buffer, start_line, end_line, translated, opts, meta, info, parts, original_lines)
+local function apply_translation_output(
+  buffer,
+  start_line,
+  end_line,
+  translated,
+  opts,
+  meta,
+  info,
+  parts,
+  original_lines
+)
   local should_replace = opts and opts.replace or M.config.replace
   local translated_lines
   if original_lines and #original_lines > 0 then
@@ -172,18 +182,202 @@ function M.translate_range(bufnr, start_line, end_line, opts)
   local stripped, info, parts = comment.strip_lines(lines, vim.bo[buffer] and vim.bo[buffer].commentstring or nil)
   local joined = table.concat(stripped, "\n")
   local translated, meta = M.translate(joined, opts)
-  local rendered = apply_translation_output(
-    buffer,
-    start_line,
-    end_line,
-    translated,
-    opts,
-    meta,
-    info,
-    parts,
-    stripped
-  )
+  local rendered = apply_translation_output(buffer, start_line, end_line, translated, opts, meta, info, parts, stripped)
   return rendered or translated
+end
+
+---Get visual selection positions from marks.
+---@param bufnr integer
+---@param mode string Visual mode character: "v", "V", or "\22" (blockwise).
+---@return integer start_row 0-indexed
+---@return integer start_col 0-indexed
+---@return integer end_row 0-indexed
+---@return integer end_col 0-indexed (exclusive)
+local function get_visual_positions(bufnr, mode)
+  local start_pos = vim.api.nvim_buf_get_mark(bufnr, "<")
+  local end_pos = vim.api.nvim_buf_get_mark(bufnr, ">")
+  local sr = start_pos[1] - 1
+  local sc = start_pos[2]
+  local er = end_pos[1] - 1
+  local ec = end_pos[2]
+
+  if mode == "V" then
+    sc = 0
+    local end_line_text = vim.api.nvim_buf_get_lines(bufnr, er, er + 1, false)[1] or ""
+    ec = #end_line_text
+  else
+    -- For charwise and blockwise, end col from mark is inclusive; make it exclusive.
+    local end_line_text = vim.api.nvim_buf_get_lines(bufnr, er, er + 1, false)[1] or ""
+    if ec >= #end_line_text then
+      ec = #end_line_text
+    else
+      ec = ec + 1
+    end
+  end
+
+  return sr, sc, er, ec
+end
+
+---Extract the selected text from a buffer based on visual mode and positions.
+---@param bufnr integer
+---@param mode string
+---@param sr integer 0-indexed start row.
+---@param sc integer 0-indexed start col.
+---@param er integer 0-indexed end row.
+---@param ec integer 0-indexed end col (exclusive).
+---@return string text The selected text joined by newlines.
+local function extract_selection_text(bufnr, mode, sr, sc, er, ec)
+  local lines = vim.api.nvim_buf_get_lines(bufnr, sr, er + 1, false)
+  if #lines == 0 then
+    return ""
+  end
+
+  if mode == "V" then
+    return table.concat(lines, "\n")
+  end
+
+  local block = (mode == "\22" or mode == "")
+  if block then
+    local parts = {}
+    for _, line in ipairs(lines) do
+      local cstart = math.min(sc, #line)
+      local cend = math.min(ec, #line)
+      table.insert(parts, line:sub(cstart + 1, cend))
+    end
+    return table.concat(parts, "\n")
+  end
+
+  -- Charwise
+  if sr == er then
+    return lines[1]:sub(sc + 1, ec)
+  end
+  local parts = {}
+  table.insert(parts, lines[1]:sub(sc + 1))
+  for i = 2, #lines - 1 do
+    table.insert(parts, lines[i])
+  end
+  table.insert(parts, lines[#lines]:sub(1, ec))
+  return table.concat(parts, "\n")
+end
+
+---Replace the selected text in a buffer.
+---@param bufnr integer
+---@param mode string
+---@param sr integer 0-indexed start row.
+---@param sc integer 0-indexed start col.
+---@param er integer 0-indexed end row.
+---@param ec integer 0-indexed end col (exclusive).
+---@param replacement string
+local function replace_selection_text(bufnr, mode, sr, sc, er, ec, replacement)
+  local rep_lines = util.split_lines(replacement)
+
+  if mode == "V" then
+    vim.api.nvim_buf_set_lines(bufnr, sr, er + 1, false, rep_lines)
+    return
+  end
+
+  local block = (mode == "\22" or mode == "")
+  if block then
+    local buf_lines = vim.api.nvim_buf_get_lines(bufnr, sr, er + 1, false)
+    for i, line in ipairs(buf_lines) do
+      local cstart = math.min(sc, #line)
+      local cend = math.min(ec, #line)
+      local rep = rep_lines[i] or ""
+      buf_lines[i] = line:sub(1, cstart) .. rep .. line:sub(cend + 1)
+    end
+    vim.api.nvim_buf_set_lines(bufnr, sr, er + 1, false, buf_lines)
+    return
+  end
+
+  -- Charwise: use nvim_buf_set_text for precise replacement.
+  vim.api.nvim_buf_set_text(bufnr, sr, sc, er, ec, rep_lines)
+end
+
+---Translate visually selected text.
+---@param bufnr integer|nil
+---@param mode string Visual mode: "v", "V", or "\22".
+---@param opts table|nil
+---@return string
+function M.translate_selection(bufnr, mode, opts)
+  local buffer = bufnr or vim.api.nvim_get_current_buf()
+  local sr, sc, er, ec = get_visual_positions(buffer, mode)
+  local text = extract_selection_text(buffer, mode, sr, sc, er, ec)
+  if text == "" then
+    return ""
+  end
+
+  local translated, meta = M.translate(text, opts)
+  local should_replace = opts and opts.replace or M.config.replace
+
+  if should_replace then
+    replace_selection_text(buffer, mode, sr, sc, er, ec, translated)
+    return translated
+  end
+
+  if opts and opts.show_window then
+    local config_win = (M.config.ui and M.config.ui.win) or {}
+    local user_win = (opts and opts.win) or {}
+    local merged_win = vim.tbl_deep_extend("force", {}, config_win, user_win)
+    ui.show_window(translated, meta, {
+      target_lang = opts.target_lang or M.config.target_lang,
+      source_lang = opts.source_lang or M.config.source_lang,
+      win = merged_win,
+      padding = merged_win and merged_win.padding or nil,
+    })
+    return translated
+  end
+
+  vim.api.nvim_echo({ { translated, "Normal" } }, false, {})
+  return translated
+end
+
+---Translate visually selected text asynchronously.
+---@param bufnr integer|nil
+---@param mode string Visual mode: "v", "V", or "\22".
+---@param opts table|nil
+---@param callbacks {on_success?:fun(result:string, meta:table), on_error?:fun(err:any)}|nil
+function M.translate_selection_async(bufnr, mode, opts, callbacks)
+  local buffer = bufnr or vim.api.nvim_get_current_buf()
+  local sr, sc, er, ec = get_visual_positions(buffer, mode)
+  local text = extract_selection_text(buffer, mode, sr, sc, er, ec)
+  if text == "" then
+    if callbacks and callbacks.on_success then
+      vim.schedule(function()
+        callbacks.on_success("", { cached = false, provider = M.config.provider, icon = M.config.icon })
+      end)
+    end
+    return
+  end
+
+  local cb = callbacks or {}
+  M.translate_async(text, opts, {
+    on_success = function(translated, meta)
+      local should_replace = opts and opts.replace or M.config.replace
+      if should_replace then
+        replace_selection_text(buffer, mode, sr, sc, er, ec, translated)
+      elseif opts and opts.show_window then
+        local config_win = (M.config.ui and M.config.ui.win) or {}
+        local user_win = (opts and opts.win) or {}
+        local merged_win = vim.tbl_deep_extend("force", {}, config_win, user_win)
+        ui.show_window(translated, meta, {
+          target_lang = opts.target_lang or M.config.target_lang,
+          source_lang = opts.source_lang or M.config.source_lang,
+          win = merged_win,
+          padding = merged_win and merged_win.padding or nil,
+        })
+      else
+        vim.api.nvim_echo({ { translated, "Normal" } }, false, {})
+      end
+      if cb.on_success then
+        cb.on_success(translated, meta)
+      end
+    end,
+    on_error = function(err)
+      if cb.on_error then
+        cb.on_error(err)
+      end
+    end,
+  })
 end
 
 ---@param opts table command opts
@@ -197,14 +391,55 @@ function M.command(opts)
     source = args[1]
     target = args[2]
   end
-  local command_opts = {
-    source_lang = source,
-    target_lang = target,
-    replace = opts.bang or M.config.replace,
-  }
+
+  local replace = opts.bang or M.config.replace
+  local vmode = opts.visual_mode
   local start_line = (opts.line1 or 1) - 1
   local end_line = opts.line2 or vim.api.nvim_buf_line_count(0)
-  return M.translate_range(0, start_line, end_line, command_opts)
+
+  local function run_with_target(target_lang)
+    if not target_lang or target_lang == "" then
+      ui.notify("metafrastis: target language required", "warn", { title = "Metafrastis" })
+      return
+    end
+    local done = ui.progress("Translating...", { title = "Metafrastis" })
+    local translate_opts = {
+      source_lang = source,
+      target_lang = target_lang,
+      replace = replace,
+      show_window = not replace,
+    }
+    local callbacks = {
+      on_success = function(_, meta)
+        local provider = meta and meta.provider or M.config.provider
+        local suffix = meta and meta.cached and " (cache)" or ""
+        done(string.format("Translated via %s%s", provider, suffix), "info")
+      end,
+      on_error = function(err)
+        done("Translation failed: " .. tostring(err), "error")
+      end,
+    }
+
+    if vmode and (vmode == "v" or vmode == "\22" or vmode == "") then
+      M.translate_selection_async(0, vmode, translate_opts, callbacks)
+    else
+      M.translate_range_async(0, start_line, end_line, translate_opts, callbacks)
+    end
+  end
+
+  local effective_target = target or M.config.target_lang
+  if effective_target and effective_target ~= "" then
+    run_with_target(effective_target)
+    return
+  end
+
+  ui.prompt_target(M.config.target_lang, function(value)
+    if value and value ~= "" then
+      run_with_target(value)
+    else
+      ui.notify("metafrastis: target language required", "warn", { title = "Metafrastis" })
+    end
+  end)
 end
 
 ---@param text string
@@ -260,17 +495,8 @@ function M.translate_range_async(bufnr, start_line, end_line, opts, callbacks)
   local cb = callbacks or {}
   M.translate_async(joined, opts, {
     on_success = function(translated, meta)
-      local rendered = apply_translation_output(
-        buffer,
-        start_line,
-        end_line,
-        translated,
-        opts,
-        meta,
-        info,
-        parts,
-        stripped
-      )
+      local rendered =
+        apply_translation_output(buffer, start_line, end_line, translated, opts, meta, info, parts, stripped)
       if cb.on_success then
         cb.on_success(rendered or translated, meta)
       end
