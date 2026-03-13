@@ -6,9 +6,9 @@ This document provides essential information for contributing to **metafrastis.n
 
 - This codebase is in early development. Large-scale refactoring is acceptable when necessary.
 - **MUST READ** the following files for context on Neovim Lua plugin development:
-  - `.agent/llms/neovim.io.xml`
-  - `.agent/llms/snacks.nvim.xml`
-  - `.agent/llms/plenary.nvim.xml`
+  - `.agents/llms/neovim.io.xml`
+  - `.agents/llms/snacks.nvim.xml`
+  - `.agents/llms/plenary.nvim.xml`
 
 ## Project Structure & Module Organization
 
@@ -42,8 +42,6 @@ This document provides essential information for contributing to **metafrastis.n
 │   ├── lint-test.yaml               # CI: StyLua check + tests
 │   ├── release.yaml                 # Release automation
 │   └── docs.yaml                    # Documentation generation
-├── .agent/
-│   └── llms/                        # LLM context files for dependencies
 ├── Makefile                         # Build/test commands
 └── .stylua.toml                     # StyLua configuration
 ```
