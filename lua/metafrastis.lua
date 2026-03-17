@@ -1,17 +1,17 @@
-local cfg = require("metafrastis.config")
 local cache = require("metafrastis.cache")
+local cfg = require("metafrastis.config")
+local comment = require("metafrastis.comment")
 local http_builder = require("metafrastis.http")
 local registry = require("metafrastis.providers")
-local util = require("metafrastis.util")
-local comment = require("metafrastis.comment")
 local ui = require("metafrastis.ui")
+local util = require("metafrastis.util")
 
-local provider_google = require("metafrastis.providers.google")
 local provider_deepl = require("metafrastis.providers.deepl")
-local provider_openai = require("metafrastis.providers.openai")
-local provider_gemini = require("metafrastis.providers.gemini")
-local provider_openrouter = require("metafrastis.providers.openrouter")
 local provider_echo = require("metafrastis.providers.echo")
+local provider_gemini = require("metafrastis.providers.gemini")
+local provider_google = require("metafrastis.providers.google")
+local provider_openai = require("metafrastis.providers.openai")
+local provider_openrouter = require("metafrastis.providers.openrouter")
 
 ---@class Metafrastis
 ---@field config MetafrastisConfig
