@@ -26,7 +26,7 @@ end
 ---@param opts table|nil
 ---@return string[]
 local function build_args(method, url, opts)
-  local args = { "-sSf", "-X", method }
+  local args = { "-sS", "-X", method, "-w", "\n%{http_code}" }
   local request_url = build_request_url(url, opts and opts.query or nil)
   if opts and opts.headers then
     for _, h in ipairs(opts.headers) do
@@ -40,6 +40,16 @@ local function build_args(method, url, opts)
   end
   table.insert(args, request_url)
   return args
+end
+
+---@param raw_stdout string
+---@return string body
+---@return integer http_status
+local function parse_response(raw_stdout)
+  local status_str = raw_stdout:match("\n(%d+)$")
+  local http_status = status_str and tonumber(status_str) or 0
+  local body = status_str and raw_stdout:sub(1, -(#status_str + 2)) or raw_stdout
+  return body, http_status
 end
 
 ---@param args string[]
@@ -56,10 +66,13 @@ local function run_with_job(args, timeout)
   })
   local stdout, code = job:sync(timeout or 20000)
   local stderr = job:stderr_result()
+  local raw = stdout and table.concat(stdout, "\n") or ""
+  local body, http_status = parse_response(raw)
   return {
     code = code or 0,
-    stdout = stdout and table.concat(stdout, "\n") or "",
+    stdout = body,
     stderr = stderr and table.concat(stderr, "\n") or "",
+    http_status = http_status,
   }
 end
 
@@ -70,20 +83,26 @@ local function run_with_system(args, timeout)
   if vim.system then
     local handle = vim.system(vim.list_extend({ "curl" }, args), { text = true, timeout = timeout })
     local result = handle:wait()
+    local raw = result.stdout or ""
+    local body, http_status = parse_response(raw)
     return {
       code = result.code,
-      stdout = result.stdout or "",
+      stdout = body,
       stderr = result.stderr or "",
+      http_status = http_status,
     }
   end
 
   local joined = "curl " .. table.concat(args, " ")
   local output = vim.fn.systemlist(joined)
   local code = vim.v.shell_error
+  local raw = table.concat(output, "\n")
+  local body, http_status = parse_response(raw)
   return {
     code = code,
-    stdout = table.concat(output, "\n"),
+    stdout = body,
     stderr = "",
+    http_status = http_status,
   }
 end
 
@@ -130,10 +149,13 @@ function M.build_async(cfg)
           timer:stop()
           timer:close()
         end
+        local raw = j:result() and table.concat(j:result(), "\n") or ""
+        local body, http_status = parse_response(raw)
         cb({
           code = code or signal or 0,
-          stdout = j:result() and table.concat(j:result(), "\n") or "",
+          stdout = body,
           stderr = j:stderr_result() and table.concat(j:stderr_result(), "\n") or "",
+          http_status = http_status,
         })
       end,
     })

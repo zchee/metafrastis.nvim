@@ -30,7 +30,10 @@ function M.translate(_http, payload)
     data = body,
   })
   if res.code ~= 0 then
-    error("deepl translate failed: " .. (res.stderr or res.stdout or "unknown error"))
+    error("deepl translate failed: " .. (res.stderr or "curl error code " .. res.code))
+  end
+  if res.http_status and res.http_status >= 400 then
+    error("deepl translate failed (HTTP " .. res.http_status .. "): " .. (res.stdout or ""))
   end
   local parsed = vim.json.decode(res.stdout)
   if not parsed or not parsed.translations or not parsed.translations[1] then
