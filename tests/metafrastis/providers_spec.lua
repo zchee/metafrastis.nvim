@@ -215,6 +215,53 @@ describe("google provider", function()
     assert.equals("x-goog-user-project: quota-project", calls[2].opts.headers[3])
   end)
 
+  it("prefers explicit gcp_project_id over ADC quota_project_id", function()
+    vim.fn.writefile({
+      vim.json.encode({
+        type = "authorized_user",
+        client_id = "cid",
+        client_secret = "secret",
+        refresh_token = "refresh",
+        quota_project_id = "adc-project",
+      }),
+    }, adc_path)
+
+    local calls = {}
+    local mock_http = function(method, url, opts)
+      table.insert(calls, {
+        method = method,
+        url = url,
+        opts = opts,
+      })
+      if url == "https://oauth2.googleapis.com/token" then
+        return {
+          code = 0,
+          stdout = vim.json.encode({
+            access_token = "adc-access-token",
+            expires_in = 3600,
+          }),
+        }
+      end
+      return {
+        code = 0,
+        stdout = vim.json.encode({
+          data = { translations = { { translatedText = "translated-with-project-override" } } },
+        }),
+      }
+    end
+
+    local payload = make_payload("hello", "google", {
+      api_key = "fallback-key",
+      adc_path = adc_path,
+      gcp_project_id = "explicit-project",
+      base_url = "https://example.com",
+    })
+    local result = google.translate(mock_http, payload)
+
+    assert.equals("translated-with-project-override", result)
+    assert.equals("x-goog-user-project: explicit-project", calls[2].opts.headers[3])
+  end)
+
   it("surfaces blocked method guidance for HTTP 403 responses", function()
     local mock_http = function()
       return {
@@ -261,6 +308,51 @@ describe("google provider", function()
     assert.is_false(ok)
     assert.is_truthy(tostring(err):find("google ADC token refresh failed %(HTTP 401%)", 1, false))
     assert.is_truthy(tostring(err):find("invalid_grant", 1, true))
+  end)
+
+  it("uses explicit gcp_project_id even when ADC lacks quota_project_id", function()
+    vim.fn.writefile({
+      vim.json.encode({
+        type = "authorized_user",
+        client_id = "cid",
+        client_secret = "secret",
+        refresh_token = "refresh",
+      }),
+    }, adc_path)
+
+    local calls = {}
+    local mock_http = function(method, url, opts)
+      table.insert(calls, {
+        method = method,
+        url = url,
+        opts = opts,
+      })
+      if url == "https://oauth2.googleapis.com/token" then
+        return {
+          code = 0,
+          stdout = vim.json.encode({
+            access_token = "adc-access-token",
+            expires_in = 3600,
+          }),
+        }
+      end
+      return {
+        code = 0,
+        stdout = vim.json.encode({
+          data = { translations = { { translatedText = "translated-with-explicit-project" } } },
+        }),
+      }
+    end
+
+    local payload = make_payload("hello", "google", {
+      adc_path = adc_path,
+      gcp_project_id = "explicit-project",
+      base_url = "https://example.com",
+    })
+    local result = google.translate(mock_http, payload)
+
+    assert.equals("translated-with-explicit-project", result)
+    assert.equals("x-goog-user-project: explicit-project", calls[2].opts.headers[3])
   end)
 
   it("errors on non-zero exit code", function()

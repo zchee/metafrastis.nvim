@@ -89,6 +89,18 @@ describe("config.defaults", function()
 
     assert.equals("/tmp/metafrastis-google-adc.json", d.providers.google.adc_path)
   end)
+
+  it("preserves explicit google gcp_project_id through merge", function()
+    local merged = config.merge({
+      providers = {
+        google = {
+          gcp_project_id = "explicit-project",
+        },
+      },
+    })
+
+    assert.equals("explicit-project", merged.providers.google.gcp_project_id)
+  end)
 end)
 
 describe("config.merge", function()

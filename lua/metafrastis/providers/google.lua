@@ -93,8 +93,9 @@ local function resolve_google_auth(cfg, _http)
       "Authorization: Bearer " .. access_token,
       "Content-Type: application/json",
     }
-    if credentials.quota_project_id and credentials.quota_project_id ~= "" then
-      table.insert(headers, "x-goog-user-project: " .. credentials.quota_project_id)
+    local project_id = cfg.gcp_project_id or credentials.quota_project_id
+    if project_id and project_id ~= "" then
+      table.insert(headers, "x-goog-user-project: " .. project_id)
     end
     return cfg.base_url, headers
   end

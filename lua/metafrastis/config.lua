@@ -14,6 +14,7 @@
 ---@class MetafrastisProviderConfig
 ---@field api_key string?
 ---@field adc_path string?
+---@field gcp_project_id string?
 ---@field model string?
 ---@field base_url string?
 ---@field glossary_id string?
@@ -72,6 +73,7 @@ function M.defaults()
         api_key = vim.env.GOOGLE_TRANSLATE_KEY or vim.env.GOOGLE_API_KEY,
         adc_path = vim.env.GOOGLE_APPLICATION_CREDENTIALS
           or vim.fn.expand("~/.config/gcloud/application_default_credentials.json"),
+        gcp_project_id = nil,
         model = "v2",
         base_url = "https://translation.googleapis.com/language/translate/v2",
         price_per_million_chars = 20.0,
