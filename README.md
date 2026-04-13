@@ -59,7 +59,10 @@ require("metafrastis").setup({
       model = "gpt-4o-mini",
     },
     google = {
-      api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GOOGLE_TRANSLATE_KEY"),
+      -- Preferred auth path: ADC from gcloud / GOOGLE_APPLICATION_CREDENTIALS.
+      api_key = os.getenv("GOOGLE_TRANSLATE_KEY") or os.getenv("GOOGLE_API_KEY"),
+      adc_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+        or vim.fn.expand("~/.config/gcloud/application_default_credentials.json"),
     },
     deepl = {
       api_key = os.getenv("DEEPL_API_KEY"),
@@ -80,6 +83,24 @@ require("metafrastis").setup({
 ```
 
 If a configured provider is missing credentials, Metafrastis falls back to the built-in `echo` provider so you can test locally without making paid calls.
+
+For the `google` backend, prefer a Cloud Translation-specific key in
+`GOOGLE_TRANSLATE_KEY`. `GOOGLE_API_KEY` remains a fallback, but it is often
+shared with other Google services in local setups and may be restricted in ways
+that block Cloud Translation.
+
+If Google Application Default Credentials exist at
+`~/.config/gcloud/application_default_credentials.json` (or
+`GOOGLE_APPLICATION_CREDENTIALS` points to a credentials file), Metafrastis now
+prefers ADC bearer-token auth for the Google backend instead of using an API
+key. This matches Google Cloud's ADC flow and helps when your project is set up
+for OAuth/ADC-based access.
+
+The current implementation is aimed at the authorized-user ADC file written by
+`gcloud auth application-default login`. If you point
+`GOOGLE_APPLICATION_CREDENTIALS` at another credential type, such as a raw
+service-account JSON key, Metafrastis will reject it instead of silently
+falling back to the API key path.
 
 ## Commands
 

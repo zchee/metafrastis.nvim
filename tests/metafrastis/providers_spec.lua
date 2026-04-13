@@ -66,25 +66,67 @@ end)
 -- ── google ──────────────────────────────────────────────────────────────
 
 describe("google provider", function()
+  local adc_path
+
+  before_each(function()
+    google._reset_for_tests()
+    adc_path = vim.fn.tempname()
+  end)
+
+  after_each(function()
+    google._reset_for_tests()
+    if adc_path and (vim.uv or vim.loop).fs_stat(adc_path) then
+      vim.fn.delete(adc_path)
+    end
+  end)
+
   it("has correct name", function()
     assert.equals("google", google.name)
   end)
 
   it("rejects empty api_key", function()
-    local ok, err = google.validate({ api_key = "" })
+    local ok, err = google.validate({ api_key = "", adc_path = adc_path })
     assert.is_false(ok)
     assert.is_string(err)
   end)
 
   it("rejects nil api_key", function()
-    local ok, err = google.validate({})
+    local ok, err = google.validate({ adc_path = adc_path })
     assert.is_false(ok)
     assert.is_string(err)
   end)
 
   it("accepts valid api_key", function()
-    local ok = google.validate({ api_key = "test-key" })
+    local ok = google.validate({ api_key = "test-key", adc_path = adc_path })
     assert.is_true(ok)
+  end)
+
+  it("accepts ADC credentials without api_key", function()
+    vim.fn.writefile({
+      vim.json.encode({
+        type = "authorized_user",
+        client_id = "cid",
+        client_secret = "secret",
+        refresh_token = "refresh",
+      }),
+    }, adc_path)
+
+    local ok = google.validate({ adc_path = adc_path })
+
+    assert.is_true(ok)
+  end)
+
+  it("rejects malformed ADC credentials", function()
+    vim.fn.writefile({
+      vim.json.encode({
+        type = "service_account",
+      }),
+    }, adc_path)
+
+    local ok, err = google.validate({ adc_path = adc_path })
+
+    assert.is_false(ok)
+    assert.is_truthy(tostring(err):find("unsupported type", 1, true))
   end)
 
   it("estimates cost based on character count", function()
@@ -108,7 +150,11 @@ describe("google provider", function()
         }),
       }
     end
-    local payload = make_payload("hello", "google", { api_key = "k", base_url = "https://example.com" })
+    local payload = make_payload("hello", "google", {
+      api_key = "k",
+      adc_path = adc_path,
+      base_url = "https://example.com",
+    })
     local result = google.translate(mock_http, payload)
     assert.equals("translated", result)
     assert.equals("POST", captured_method)
@@ -116,11 +162,112 @@ describe("google provider", function()
     assert.truthy(captured_url:find("key=k"))
   end)
 
+  it("prefers ADC bearer auth over api_key when ADC credentials exist", function()
+    vim.fn.writefile({
+      vim.json.encode({
+        type = "authorized_user",
+        client_id = "cid",
+        client_secret = "secret",
+        refresh_token = "refresh",
+        quota_project_id = "quota-project",
+      }),
+    }, adc_path)
+
+    local calls = {}
+    local mock_http = function(method, url, opts)
+      table.insert(calls, {
+        method = method,
+        url = url,
+        opts = opts,
+      })
+      if url == "https://oauth2.googleapis.com/token" then
+        return {
+          code = 0,
+          stdout = vim.json.encode({
+            access_token = "adc-access-token",
+            expires_in = 3600,
+            token_type = "Bearer",
+          }),
+        }
+      end
+      return {
+        code = 0,
+        stdout = vim.json.encode({
+          data = { translations = { { translatedText = "translated-with-adc" } } },
+        }),
+      }
+    end
+
+    local payload = make_payload("hello", "google", {
+      api_key = "fallback-key",
+      adc_path = adc_path,
+      base_url = "https://example.com",
+    })
+    local result = google.translate(mock_http, payload)
+
+    assert.equals("translated-with-adc", result)
+    assert.equals(2, #calls)
+    assert.equals("https://oauth2.googleapis.com/token", calls[1].url)
+    assert.truthy(calls[1].opts.data:find("refresh_token=refresh", 1, true))
+    assert.equals("https://example.com", calls[2].url)
+    assert.falsy(calls[2].url:find("key=", 1, true))
+    assert.equals("Authorization: Bearer adc-access-token", calls[2].opts.headers[1])
+    assert.equals("x-goog-user-project: quota-project", calls[2].opts.headers[3])
+  end)
+
+  it("surfaces blocked method guidance for HTTP 403 responses", function()
+    local mock_http = function()
+      return {
+        code = 0,
+        http_status = 403,
+        stdout = [[{"error":{"code":403,"message":"Requests to this API translate method google.cloud.translate.v2.TranslateService.TranslateText are blocked."}}]],
+      }
+    end
+    local payload = make_payload("hi", "google", {
+      api_key = "k",
+      adc_path = adc_path,
+      base_url = "https://x.com",
+    })
+    local ok, err = pcall(google.translate, mock_http, payload)
+    assert.is_false(ok)
+    assert.is_truthy(tostring(err):find("google translate failed %(HTTP 403%)", 1, false))
+    assert.is_truthy(tostring(err):find("GOOGLE_TRANSLATE_KEY", 1, true))
+    assert.is_truthy(tostring(err):find("application_default_credentials.json", 1, true))
+  end)
+
+  it("errors clearly when ADC token refresh fails", function()
+    vim.fn.writefile({
+      vim.json.encode({
+        type = "authorized_user",
+        client_id = "cid",
+        client_secret = "secret",
+        refresh_token = "refresh",
+      }),
+    }, adc_path)
+
+    local mock_http = function()
+      return {
+        code = 0,
+        http_status = 401,
+        stdout = [[{"error":"invalid_grant"}]],
+      }
+    end
+    local payload = make_payload("hi", "google", {
+      api_key = "fallback-key",
+      adc_path = adc_path,
+      base_url = "https://x.com",
+    })
+    local ok, err = pcall(google.translate, mock_http, payload)
+    assert.is_false(ok)
+    assert.is_truthy(tostring(err):find("google ADC token refresh failed %(HTTP 401%)", 1, false))
+    assert.is_truthy(tostring(err):find("invalid_grant", 1, true))
+  end)
+
   it("errors on non-zero exit code", function()
     local mock_http = function()
       return { code = 1, stderr = "timeout" }
     end
-    local payload = make_payload("hi", "google", { api_key = "k", base_url = "https://x.com" })
+    local payload = make_payload("hi", "google", { api_key = "k", adc_path = adc_path, base_url = "https://x.com" })
     assert.has_error(function()
       google.translate(mock_http, payload)
     end)
@@ -130,7 +277,7 @@ describe("google provider", function()
     local mock_http = function()
       return { code = 0, stdout = "{}" }
     end
-    local payload = make_payload("hi", "google", { api_key = "k", base_url = "https://x.com" })
+    local payload = make_payload("hi", "google", { api_key = "k", adc_path = adc_path, base_url = "https://x.com" })
     assert.has_error(function()
       google.translate(mock_http, payload)
     end)

@@ -13,6 +13,7 @@
 
 ---@class MetafrastisProviderConfig
 ---@field api_key string?
+---@field adc_path string?
 ---@field model string?
 ---@field base_url string?
 ---@field glossary_id string?
@@ -68,7 +69,9 @@ function M.defaults()
         suffix = "[echo]",
       },
       google = {
-        api_key = vim.env.GOOGLE_API_KEY or vim.env.GOOGLE_TRANSLATE_KEY,
+        api_key = vim.env.GOOGLE_TRANSLATE_KEY or vim.env.GOOGLE_API_KEY,
+        adc_path = vim.env.GOOGLE_APPLICATION_CREDENTIALS
+          or vim.fn.expand("~/.config/gcloud/application_default_credentials.json"),
         model = "v2",
         base_url = "https://translation.googleapis.com/language/translate/v2",
         price_per_million_chars = 20.0,

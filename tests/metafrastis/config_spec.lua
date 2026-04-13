@@ -1,6 +1,12 @@
 local config = require("metafrastis.config")
 
 describe("config.defaults", function()
+  after_each(function()
+    vim.env.GOOGLE_API_KEY = nil
+    vim.env.GOOGLE_TRANSLATE_KEY = nil
+    vim.env.GOOGLE_APPLICATION_CREDENTIALS = nil
+  end)
+
   it("returns a table", function()
     local d = config.defaults()
     assert.is_table(d)
@@ -56,6 +62,32 @@ describe("config.defaults", function()
     local b = config.defaults()
     a.provider = "changed"
     assert.not_equals(a.provider, b.provider)
+  end)
+
+  it("prefers GOOGLE_TRANSLATE_KEY over generic GOOGLE_API_KEY for google backend", function()
+    vim.env.GOOGLE_API_KEY = "generic-google-key"
+    vim.env.GOOGLE_TRANSLATE_KEY = "translate-specific-key"
+
+    local d = config.defaults()
+
+    assert.equals("translate-specific-key", d.providers.google.api_key)
+  end)
+
+  it("falls back to GOOGLE_API_KEY when GOOGLE_TRANSLATE_KEY is unset", function()
+    vim.env.GOOGLE_TRANSLATE_KEY = nil
+    vim.env.GOOGLE_API_KEY = "generic-google-key"
+
+    local d = config.defaults()
+
+    assert.equals("generic-google-key", d.providers.google.api_key)
+  end)
+
+  it("uses GOOGLE_APPLICATION_CREDENTIALS for google ADC path override", function()
+    vim.env.GOOGLE_APPLICATION_CREDENTIALS = "/tmp/metafrastis-google-adc.json"
+
+    local d = config.defaults()
+
+    assert.equals("/tmp/metafrastis-google-adc.json", d.providers.google.adc_path)
   end)
 end)
 
