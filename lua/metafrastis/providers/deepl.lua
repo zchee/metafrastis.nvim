@@ -17,7 +17,6 @@ end
 function M.translate(_http, payload)
   local cfg = payload.config.providers.deepl
   local params = {
-    "auth_key=" .. util.urlencode(cfg.api_key),
     "text=" .. util.urlencode(payload.text),
     "target_lang=" .. util.urlencode((payload.target_lang or ""):upper()),
   }
@@ -26,7 +25,10 @@ function M.translate(_http, payload)
   end
   local body = table.concat(params, "&")
   local res = _http("POST", cfg.base_url, {
-    headers = { "Content-Type: application/x-www-form-urlencoded" },
+    headers = {
+      "Authorization: DeepL-Auth-Key " .. cfg.api_key,
+      "Content-Type: application/x-www-form-urlencoded",
+    },
     data = body,
   })
   if res.code ~= 0 then

@@ -174,9 +174,33 @@ describe("deepl provider", function()
     local payload = make_payload("hello", "deepl", { api_key = "dk", base_url = "https://api.deepl.test" })
     local result = deepl.translate(mock_http, payload)
     assert.equals("hola", result)
-    -- Body should be form-encoded.
-    assert.truthy(captured_opts.data:find("auth_key="))
+    local found_auth = false
+    for _, header in ipairs(captured_opts.headers or {}) do
+      if header == "Authorization: DeepL-Auth-Key dk" then
+        found_auth = true
+        break
+      end
+    end
+    assert.is_true(found_auth)
+    assert.falsy(captured_opts.data:find("auth_key=", 1, true))
     assert.truthy(captured_opts.data:find("text="))
+    assert.truthy(captured_opts.data:find("target_lang="))
+    assert.truthy(captured_opts.data:find("source_lang="))
+  end)
+
+  it("surfaces HTTP API failures with response details", function()
+    local mock_http = function()
+      return {
+        code = 0,
+        http_status = 403,
+        stdout = [[{"message":"legacy auth rejected"}]],
+      }
+    end
+    local payload = make_payload("hi", "deepl", { api_key = "k", base_url = "https://x.com" })
+    local ok, err = pcall(deepl.translate, mock_http, payload)
+    assert.is_false(ok)
+    assert.is_truthy(tostring(err):find("deepl translate failed %(HTTP 403%)", 1, false))
+    assert.is_truthy(tostring(err):find("legacy auth rejected", 1, true))
   end)
 
   it("errors on unexpected response", function()
