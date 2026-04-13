@@ -63,6 +63,7 @@ require("metafrastis").setup({
       api_key = os.getenv("GOOGLE_TRANSLATE_KEY") or os.getenv("GOOGLE_API_KEY"),
       adc_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
         or vim.fn.expand("~/.config/gcloud/application_default_credentials.json"),
+      gcp_project_id = "your-billing-or-quota-project", -- optional override for x-goog-user-project
     },
     deepl = {
       api_key = os.getenv("DEEPL_API_KEY"),
@@ -101,6 +102,11 @@ The current implementation is aimed at the authorized-user ADC file written by
 `GOOGLE_APPLICATION_CREDENTIALS` at another credential type, such as a raw
 service-account JSON key, Metafrastis will reject it instead of silently
 falling back to the API key path.
+
+Set `providers.google.gcp_project_id` when you want to force a specific
+`x-goog-user-project` header. This value overrides any `quota_project_id`
+embedded in the ADC file and is useful when billing or quota should be charged
+to a different Google Cloud project.
 
 ## Commands
 
