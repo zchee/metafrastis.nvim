@@ -19,6 +19,8 @@
 ---@field base_url string?
 ---@field glossary_id string?
 ---@field referer string?
+---@field fallback_models string[]?
+---@field retry_on_upstream_rate_limit boolean?
 
 ---@class MetafrastisConfig
 ---@field provider string
@@ -104,6 +106,8 @@ function M.defaults()
         input_per_million = 0.15,
         output_per_million = 0.60,
         referer = "https://github.com/zchee/metafrastis.nvim",
+        fallback_models = { "openrouter/auto" },
+        retry_on_upstream_rate_limit = true,
       },
     },
     ui = {

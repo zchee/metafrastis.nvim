@@ -101,6 +101,13 @@ describe("config.defaults", function()
 
     assert.equals("explicit-project", merged.providers.google.gcp_project_id)
   end)
+
+  it("enables OpenRouter upstream rate-limit fallback by default", function()
+    local d = config.defaults()
+
+    assert.is_true(d.providers.openrouter.retry_on_upstream_rate_limit)
+    assert.same({ "openrouter/auto" }, d.providers.openrouter.fallback_models)
+  end)
 end)
 
 describe("config.merge", function()

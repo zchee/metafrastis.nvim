@@ -75,6 +75,8 @@ require("metafrastis").setup({
     openrouter = {
       api_key = os.getenv("OPENROUTER_API_KEY"),
       model = "openrouter/auto",
+      fallback_models = { "openrouter/auto" },
+      retry_on_upstream_rate_limit = true,
     },
     echo = {
       suffix = "[echo]",
@@ -107,6 +109,13 @@ Set `providers.google.gcp_project_id` when you want to force a specific
 `x-goog-user-project` header. This value overrides any `quota_project_id`
 embedded in the ADC file and is useful when billing or quota should be charged
 to a different Google Cloud project.
+
+OpenRouter upstream model providers can rate-limit independently from your
+OpenRouter account. When `providers.openrouter.retry_on_upstream_rate_limit` is
+enabled, Metafrastis retries a provider-originated HTTP 429 once through each
+`providers.openrouter.fallback_models` entry, defaulting to `openrouter/auto`.
+User/account rate-limit errors still fail immediately so quota and billing
+problems stay visible.
 
 ## Commands
 

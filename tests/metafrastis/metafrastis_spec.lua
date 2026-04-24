@@ -57,6 +57,59 @@ describe("translation core", function()
     assert.equals("hello world", lines[1])
   end)
 
+  it("retries OpenRouter fallback model for line-range upstream rate limits", function()
+    local requested_models = {}
+    metafrastis.setup({
+      provider = "openrouter",
+      cache = { enabled = false },
+      providers = {
+        openrouter = {
+          api_key = "or-k",
+          model = "deepseek/deepseek-v4-flash",
+          base_url = "https://or.test",
+          fallback_models = { "openrouter/auto" },
+        },
+      },
+    })
+    metafrastis.http = function(_, _, opts)
+      local body = vim.json.decode(opts.data)
+      table.insert(requested_models, body.model)
+      assert.truthy(body.messages[2].content:find("first line\nsecond line", 1, true))
+      if #requested_models == 1 then
+        return {
+          code = 0,
+          http_status = 429,
+          stdout = vim.json.encode({
+            error = {
+              message = "Provider returned error",
+              code = 429,
+              metadata = {
+                raw = "deepseek/deepseek-v4-flash is temporarily rate-limited upstream",
+                provider_name = "DeepInfra",
+                is_byok = false,
+              },
+            },
+          }),
+        }
+      end
+      return {
+        code = 0,
+        stdout = vim.json.encode({
+          choices = { { message = { content = "fallback translation\nsecond translated" } } },
+        }),
+      }
+    end
+
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_current_buf(bufnr)
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "first line", "second line" })
+
+    local out = metafrastis.translate_range(bufnr, 0, 2, { target_lang = "ja" })
+
+    assert.equals("fallback translation\nsecond translated", out)
+    assert.same({ "deepseek/deepseek-v4-flash", "openrouter/auto" }, requested_models)
+  end)
+
   it("caches repeated calls", function()
     local calls = 0
     registry.register("count", {

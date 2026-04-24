@@ -676,4 +676,255 @@ describe("openrouter provider", function()
       openrouter.translate(mock_http, payload)
     end)
   end)
+
+  it("retries configured fallback model when upstream provider is rate-limited", function()
+    local requested_models = {}
+    local mock_http = function(_, _, opts)
+      local body = vim.json.decode(opts.data)
+      table.insert(requested_models, body.model)
+      if #requested_models == 1 then
+        return {
+          code = 0,
+          http_status = 429,
+          stdout = vim.json.encode({
+            error = {
+              message = "Provider returned error",
+              code = 429,
+              metadata = {
+                raw = "deepseek/deepseek-v4-flash is temporarily rate-limited upstream",
+                provider_name = "DeepInfra",
+                is_byok = false,
+              },
+            },
+          }),
+        }
+      end
+      return {
+        code = 0,
+        stdout = vim.json.encode({
+          choices = { { message = { content = "fallback ok" } } },
+        }),
+      }
+    end
+
+    local payload = make_payload("hello", "openrouter", {
+      api_key = "or-k",
+      model = "deepseek/deepseek-v4-flash",
+      base_url = "https://or.test",
+      fallback_models = { "openrouter/auto" },
+    })
+
+    local result = openrouter.translate(mock_http, payload)
+
+    assert.equals("fallback ok", result)
+    assert.same({ "deepseek/deepseek-v4-flash", "openrouter/auto" }, requested_models)
+  end)
+
+  it("retries openrouter auto once when the auto-selected upstream is rate-limited", function()
+    local requested_models = {}
+    local mock_http = function(_, _, opts)
+      local body = vim.json.decode(opts.data)
+      table.insert(requested_models, body.model)
+      if #requested_models == 1 then
+        return {
+          code = 0,
+          http_status = 429,
+          stdout = vim.json.encode({
+            error = {
+              message = "Provider returned error",
+              code = 429,
+              metadata = {
+                raw = "deepseek/deepseek-v4-flash is temporarily rate-limited upstream",
+                provider_name = "DeepInfra",
+                is_byok = false,
+              },
+            },
+          }),
+        }
+      end
+      return {
+        code = 0,
+        stdout = vim.json.encode({
+          choices = { { message = { content = "auto retry ok" } } },
+        }),
+      }
+    end
+
+    local payload = make_payload("hello", "openrouter", {
+      api_key = "or-k",
+      model = "openrouter/auto",
+      base_url = "https://or.test",
+      fallback_models = { "openrouter/auto" },
+    })
+
+    local result = openrouter.translate(mock_http, payload)
+
+    assert.equals("auto retry ok", result)
+    assert.same({ "openrouter/auto", "openrouter/auto" }, requested_models)
+  end)
+
+  it("skips duplicate non-auto fallback models", function()
+    local requested_models = {}
+    local mock_http = function(_, _, opts)
+      local body = vim.json.decode(opts.data)
+      table.insert(requested_models, body.model)
+      if #requested_models == 1 then
+        return {
+          code = 0,
+          http_status = 429,
+          stdout = vim.json.encode({
+            error = {
+              message = "Provider returned error",
+              code = 429,
+              metadata = {
+                raw = "deepseek/deepseek-v4-flash is temporarily rate-limited upstream",
+                provider_name = "DeepInfra",
+                is_byok = false,
+              },
+            },
+          }),
+        }
+      end
+      return {
+        code = 0,
+        stdout = vim.json.encode({
+          choices = { { message = { content = "fallback without duplicate primary" } } },
+        }),
+      }
+    end
+
+    local payload = make_payload("hello", "openrouter", {
+      api_key = "or-k",
+      model = "deepseek/deepseek-v4-flash",
+      base_url = "https://or.test",
+      fallback_models = {
+        "deepseek/deepseek-v4-flash",
+        "openrouter/auto",
+        "openrouter/auto",
+      },
+    })
+
+    local result = openrouter.translate(mock_http, payload)
+
+    assert.equals("fallback without duplicate primary", result)
+    assert.same({ "deepseek/deepseek-v4-flash", "openrouter/auto" }, requested_models)
+  end)
+
+  it("does not retry user or account rate-limit errors", function()
+    local calls = 0
+    local mock_http = function()
+      calls = calls + 1
+      return {
+        code = 0,
+        http_status = 429,
+        stdout = vim.json.encode({
+          error = {
+            message = "Rate limit exceeded",
+            code = 429,
+          },
+        }),
+      }
+    end
+
+    local payload = make_payload("hello", "openrouter", {
+      api_key = "or-k",
+      model = "deepseek/deepseek-v4-flash",
+      base_url = "https://or.test",
+      fallback_models = { "openrouter/auto" },
+    })
+
+    local ok, err = pcall(function()
+      openrouter.translate(mock_http, payload)
+    end)
+    assert.is_false(ok)
+    assert.truthy(err:find("openrouter translate failed %(HTTP 429%)"))
+    assert.equals(1, calls)
+  end)
+
+  it("does not retry upstream rate-limit errors when disabled", function()
+    local calls = 0
+    local mock_http = function()
+      calls = calls + 1
+      return {
+        code = 0,
+        http_status = 429,
+        stdout = vim.json.encode({
+          error = {
+            message = "Provider returned error",
+            code = 429,
+            metadata = {
+              raw = "deepseek/deepseek-v4-flash is temporarily rate-limited upstream",
+              provider_name = "DeepInfra",
+              is_byok = false,
+            },
+          },
+        }),
+      }
+    end
+
+    local payload = make_payload("hello", "openrouter", {
+      api_key = "or-k",
+      model = "deepseek/deepseek-v4-flash",
+      base_url = "https://or.test",
+      fallback_models = { "openrouter/auto" },
+      retry_on_upstream_rate_limit = false,
+    })
+
+    local ok, err = pcall(function()
+      openrouter.translate(mock_http, payload)
+    end)
+    assert.is_false(ok)
+    assert.truthy(err:find("openrouter translate failed %(HTTP 429%)"))
+    assert.equals(1, calls)
+  end)
+
+  it("reports fallback model HTTP failure after retrying an upstream rate limit", function()
+    local requested_models = {}
+    local mock_http = function(_, _, opts)
+      local body = vim.json.decode(opts.data)
+      table.insert(requested_models, body.model)
+      if #requested_models == 1 then
+        return {
+          code = 0,
+          http_status = 429,
+          stdout = vim.json.encode({
+            error = {
+              message = "Provider returned error",
+              code = 429,
+              metadata = {
+                raw = "deepseek/deepseek-v4-flash is temporarily rate-limited upstream",
+                provider_name = "DeepInfra",
+                is_byok = false,
+              },
+            },
+          }),
+        }
+      end
+
+      return {
+        code = 0,
+        http_status = 401,
+        stdout = vim.json.encode({
+          error = {
+            message = "No auth credentials found",
+            code = 401,
+          },
+        }),
+      }
+    end
+
+    local payload = make_payload("hello", "openrouter", {
+      api_key = "or-k",
+      model = "deepseek/deepseek-v4-flash",
+      base_url = "https://or.test",
+      fallback_models = { "openrouter/auto" },
+    })
+
+    local ok, err = pcall(function()
+      openrouter.translate(mock_http, payload)
+    end)
+    assert.is_false(ok)
+    assert.truthy(err:find("openrouter translate failed %(HTTP 401%)"))
+    assert.same({ "deepseek/deepseek-v4-flash", "openrouter/auto" }, requested_models)
+  end)
 end)

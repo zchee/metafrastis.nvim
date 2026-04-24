@@ -50,7 +50,12 @@ Use your preferred manager. Example (lazy.nvim):
         google = { api_key = os.getenv("GOOGLE_API_KEY") },
         deepl = { api_key = os.getenv("DEEPL_API_KEY") },
         gemini = { api_key = os.getenv("GOOGLE_GENAI_KEY"), model = "gemini-2.5-flash" },
-        openrouter = { api_key = os.getenv("OPENROUTER_API_KEY"), model = "openrouter/auto" },
+        openrouter = {
+          api_key = os.getenv("OPENROUTER_API_KEY"),
+          model = "openrouter/auto",
+          fallback_models = { "openrouter/auto" },
+          retry_on_upstream_rate_limit = true,
+        },
         echo = { suffix = "[echo]" },
       },
     })
@@ -58,6 +63,13 @@ Use your preferred manager. Example (lazy.nvim):
 
 If a configured provider is missing credentials, Metafrastis uses the built-in
 `echo` provider so you can test locally without network calls.
+
+OpenRouter model providers can return their own HTTP 429 rate limits even when
+your OpenRouter account is still usable. When
+`providers.openrouter.retry_on_upstream_rate_limit` is enabled, Metafrastis
+retries provider-originated 429 responses once through each configured
+`providers.openrouter.fallback_models` entry. Account or authentication
+failures are not retried, so quota and billing problems remain visible.
 
 ==============================================================================
 4. Commands                                         *metafrastis-commands*
