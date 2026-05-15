@@ -3,7 +3,7 @@ local metafrastis = require("metafrastis")
 ---Detect charwise/blockwise visual mode when command is invoked from a visual selection.
 ---Returns the visual mode string ("v" or "\22") if the command range matches
 ---the visual marks, nil otherwise.
----@param opts vim.api.keyset.user_command Optional flags
+---@param opts vim.api.keyset.create_user_command.command_args
 ---@return string|nil
 local function detect_charwise_visual(opts)
   if opts.range ~= 2 then
@@ -23,6 +23,7 @@ local function detect_charwise_visual(opts)
   return nil
 end
 
+---@param opts vim.api.keyset.create_user_command.command_args
 vim.api.nvim_create_user_command("MetafrastisTranslate", function(opts)
   opts.visual_mode = detect_charwise_visual(opts)
   metafrastis.command(opts)
