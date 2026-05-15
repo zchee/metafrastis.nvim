@@ -17,17 +17,44 @@ local function get_snacks()
 end
 
 ---Close the active window if one exists.
+---@return boolean closed True when an active window was present.
 local function close_active_win()
   local win = active_win
   active_win = nil
   if not win then
-    return
+    return false
   end
   pcall(function()
     if type(win.close) == "function" then
       win:close()
     end
   end)
+  return true
+end
+
+---Return true when Neovim is currently in visual or select mode.
+---@param mode string|nil Current mode from vim.fn.mode().
+---@return boolean
+local function is_visual_or_select_mode(mode)
+  return mode == "v" or mode == "V" or mode == "\22" or mode == "s" or mode == "S" or mode == "\19"
+end
+
+---Leave visual/select mode after cursor movement dismisses the popup.
+local function leave_visual_or_select_mode()
+  if not is_visual_or_select_mode(vim.fn.mode()) then
+    return
+  end
+  local esc = vim.api.nvim_replace_termcodes("<Esc>", true, false, true)
+  vim.api.nvim_feedkeys(esc, "nx", false)
+end
+
+---Close the active window and normalize visual/select mode after cursor movement.
+---@param event string Autocmd event name that dismissed the popup.
+local function close_on_cursor_context_change(event)
+  local closed = close_active_win()
+  if closed and event == "CursorMoved" then
+    leave_visual_or_select_mode()
+  end
 end
 
 function M.has_snacks()
@@ -226,8 +253,8 @@ function M.show_window(text, meta, opts)
         group = autoclose_group,
         once = true,
         desc = "metafrastis: close translation window",
-        callback = function()
-          close_active_win()
+        callback = function(args)
+          close_on_cursor_context_change(args.event)
         end,
       })
       if win.show then

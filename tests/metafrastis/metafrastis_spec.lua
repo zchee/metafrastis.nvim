@@ -640,7 +640,12 @@ describe("visual selection translation", function()
 end)
 
 describe("Snacks.win result window", function()
+  local original_mode = vim.fn.mode
+  local original_feedkeys = vim.api.nvim_feedkeys
+
   after_each(function()
+    vim.fn.mode = original_mode
+    vim.api.nvim_feedkeys = original_feedkeys
     package.loaded["snacks"] = nil
     require("metafrastis.ui")._reset_for_tests()
   end)
@@ -860,12 +865,8 @@ describe("Snacks.win result window", function()
     require("metafrastis.ui")._reset_for_tests()
   end)
 
-  it("closes snacks.win on CursorMoved", function()
-    metafrastis._reset_for_tests()
-    metafrastis.setup({ provider = "echo" })
-
-    local closed = 0
-    local win_opts
+  local function install_mock_snacks_win(win_id)
+    local state = { closed = 0, win_opts = nil }
     package.loaded["snacks"] = {
       notify = {
         info = function() end,
@@ -873,25 +874,28 @@ describe("Snacks.win result window", function()
         notify = function() end,
       },
       win = function(opts)
-        win_opts = opts
+        state.win_opts = opts
         return {
-          win = 1000,
+          win = win_id,
           show = function() end,
           close = function()
-            closed = closed + 1
+            state.closed = state.closed + 1
           end,
         }
       end,
     }
     require("metafrastis.ui")._reset_for_tests()
+    return state
+  end
 
+  local function show_echo_window(target_lang)
     local bufnr = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_set_current_buf(bufnr)
     vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "Hello world" })
 
     local done = false
     metafrastis.translate_range_async(bufnr, 0, 1, {
-      target_lang = "es",
+      target_lang = target_lang,
       show_window = true,
       replace = false,
     }, {
@@ -907,11 +911,83 @@ describe("Snacks.win result window", function()
     vim.wait(1000, function()
       return done
     end)
+    assert.is_true(done)
+  end
 
+  it("closes snacks.win on CursorMoved", function()
+    metafrastis._reset_for_tests()
+    metafrastis.setup({ provider = "echo" })
+    local state = install_mock_snacks_win(1000)
+
+    show_echo_window("es")
     vim.api.nvim_exec_autocmds("CursorMoved", { modeline = false })
 
-    assert.is_true(done)
-    assert.equals(1, closed)
+    assert.equals(1, state.closed)
+  end)
+
+  it("leaves visual mode when CursorMoved closes snacks.win", function()
+    metafrastis._reset_for_tests()
+    metafrastis.setup({ provider = "echo" })
+    local state = install_mock_snacks_win(1001)
+    local feedkeys_calls = {}
+    vim.fn.mode = function()
+      return "v"
+    end
+    vim.api.nvim_feedkeys = function(keys, mode, escape_ks)
+      table.insert(feedkeys_calls, { keys = keys, mode = mode, escape_ks = escape_ks })
+    end
+
+    show_echo_window("es")
+    feedkeys_calls = {}
+    vim.api.nvim_exec_autocmds("CursorMoved", { modeline = false })
+
+    local expected_esc = vim.api.nvim_replace_termcodes("<Esc>", true, false, true)
+    assert.equals(1, state.closed)
+    assert.equals(1, #feedkeys_calls)
+    assert.equals(expected_esc, feedkeys_calls[1].keys)
+    assert.equals("nx", feedkeys_calls[1].mode)
+    assert.is_false(feedkeys_calls[1].escape_ks)
+  end)
+
+  it("does not leave insert mode when CursorMovedI closes snacks.win", function()
+    metafrastis._reset_for_tests()
+    metafrastis.setup({ provider = "echo" })
+    local state = install_mock_snacks_win(1002)
+    local feedkeys_calls = {}
+    vim.fn.mode = function()
+      return "i"
+    end
+    vim.api.nvim_feedkeys = function(keys, mode, escape_ks)
+      table.insert(feedkeys_calls, { keys = keys, mode = mode, escape_ks = escape_ks })
+    end
+
+    show_echo_window("es")
+    feedkeys_calls = {}
+    vim.api.nvim_exec_autocmds("CursorMovedI", { modeline = false })
+
+    assert.equals(1, state.closed)
+    assert.equals(0, #feedkeys_calls)
+  end)
+
+  it("does not feed escape for stale CursorMoved autocmds after a newer window already closed", function()
+    metafrastis._reset_for_tests()
+    metafrastis.setup({ provider = "echo" })
+    local state = install_mock_snacks_win(1003)
+    local feedkeys_calls = {}
+    vim.fn.mode = function()
+      return "v"
+    end
+    vim.api.nvim_feedkeys = function(keys, mode, escape_ks)
+      table.insert(feedkeys_calls, { keys = keys, mode = mode, escape_ks = escape_ks })
+    end
+
+    show_echo_window("es")
+    show_echo_window("de")
+    feedkeys_calls = {}
+    vim.api.nvim_exec_autocmds("CursorMoved", { modeline = false })
+
+    assert.equals(2, state.closed)
+    assert.equals(1, #feedkeys_calls)
   end)
 end)
 
