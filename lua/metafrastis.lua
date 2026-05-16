@@ -218,22 +218,24 @@ local function get_visual_positions(bufnr, mode)
   return sr, sc, er, ec
 end
 
----Extract the selected text from a buffer based on visual mode and positions.
+---Extract selected lines from a buffer based on visual mode and positions.
+---Returns the lines as an array so callers can perform per-line processing
+---(e.g. commentstring stripping) before joining.
 ---@param bufnr integer
 ---@param mode string
 ---@param sr integer 0-indexed start row.
 ---@param sc integer 0-indexed start col.
 ---@param er integer 0-indexed end row.
 ---@param ec integer 0-indexed end col (exclusive).
----@return string text The selected text joined by newlines.
-local function extract_selection_text(bufnr, mode, sr, sc, er, ec)
+---@return string[] selected_lines
+local function extract_selection_lines(bufnr, mode, sr, sc, er, ec)
   local lines = vim.api.nvim_buf_get_lines(bufnr, sr, er + 1, false)
   if #lines == 0 then
-    return ""
+    return {}
   end
 
   if mode == "V" then
-    return table.concat(lines, "\n")
+    return lines
   end
 
   local block = (mode == "\22" or mode == "")
@@ -244,12 +246,12 @@ local function extract_selection_text(bufnr, mode, sr, sc, er, ec)
       local cend = math.min(ec, #line)
       table.insert(parts, line:sub(cstart + 1, cend))
     end
-    return table.concat(parts, "\n")
+    return parts
   end
 
   -- Charwise
   if sr == er then
-    return lines[1]:sub(sc + 1, ec)
+    return { lines[1]:sub(sc + 1, ec) }
   end
   local parts = {}
   table.insert(parts, lines[1]:sub(sc + 1))
@@ -257,7 +259,19 @@ local function extract_selection_text(bufnr, mode, sr, sc, er, ec)
     table.insert(parts, lines[i])
   end
   table.insert(parts, lines[#lines]:sub(1, ec))
-  return table.concat(parts, "\n")
+  return parts
+end
+
+---Extract the selected text from a buffer based on visual mode and positions.
+---@param bufnr integer
+---@param mode string
+---@param sr integer 0-indexed start row.
+---@param sc integer 0-indexed start col.
+---@param er integer 0-indexed end row.
+---@param ec integer 0-indexed end col (exclusive).
+---@return string text The selected text joined by newlines.
+local function extract_selection_text(bufnr, mode, sr, sc, er, ec)
+  return table.concat(extract_selection_lines(bufnr, mode, sr, sc, er, ec), "\n")
 end
 
 ---Replace the selected text in a buffer.
@@ -301,7 +315,10 @@ end
 function M.translate_selection(bufnr, mode, opts)
   local buffer = bufnr or vim.api.nvim_get_current_buf()
   local sr, sc, er, ec = get_visual_positions(buffer, mode)
-  local text = extract_selection_text(buffer, mode, sr, sc, er, ec)
+  local selected_lines = extract_selection_lines(buffer, mode, sr, sc, er, ec)
+  local commentstring = vim.bo[buffer] and vim.bo[buffer].commentstring or nil
+  local stripped_lines, info, parts = comment.strip_lines(selected_lines, commentstring)
+  local text = table.concat(stripped_lines, "\n")
   if text == "" then
     return ""
   end
@@ -310,7 +327,11 @@ function M.translate_selection(bufnr, mode, opts)
   local should_replace = opts and opts.replace or M.config.replace
 
   if should_replace then
-    replace_selection_text(buffer, mode, sr, sc, er, ec, translated)
+    local out_lines = util.reflow_lines(translated, stripped_lines)
+    if info and parts then
+      out_lines = comment.reapply(out_lines, info, parts)
+    end
+    replace_selection_text(buffer, mode, sr, sc, er, ec, table.concat(out_lines, "\n"))
     return translated
   end
 
@@ -339,7 +360,10 @@ end
 function M.translate_selection_async(bufnr, mode, opts, callbacks)
   local buffer = bufnr or vim.api.nvim_get_current_buf()
   local sr, sc, er, ec = get_visual_positions(buffer, mode)
-  local text = extract_selection_text(buffer, mode, sr, sc, er, ec)
+  local selected_lines = extract_selection_lines(buffer, mode, sr, sc, er, ec)
+  local commentstring = vim.bo[buffer] and vim.bo[buffer].commentstring or nil
+  local stripped_lines, info, parts = comment.strip_lines(selected_lines, commentstring)
+  local text = table.concat(stripped_lines, "\n")
   if text == "" then
     if callbacks and callbacks.on_success then
       vim.schedule(function()
@@ -354,7 +378,11 @@ function M.translate_selection_async(bufnr, mode, opts, callbacks)
     on_success = function(translated, meta)
       local should_replace = opts and opts.replace or M.config.replace
       if should_replace then
-        replace_selection_text(buffer, mode, sr, sc, er, ec, translated)
+        local out_lines = util.reflow_lines(translated, stripped_lines)
+        if info and parts then
+          out_lines = comment.reapply(out_lines, info, parts)
+        end
+        replace_selection_text(buffer, mode, sr, sc, er, ec, table.concat(out_lines, "\n"))
       elseif opts and opts.show_window then
         local config_win = (M.config.ui and M.config.ui.win) or {}
         local user_win = (opts and opts.win) or {}

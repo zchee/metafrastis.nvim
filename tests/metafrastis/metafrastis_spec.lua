@@ -637,6 +637,130 @@ describe("visual selection translation", function()
     assert.truthy(all:find("Hello"), "expected 'Hello' prefix preserved: " .. vim.inspect(lines))
     assert.truthy(all:find("bar"), "expected 'bar' suffix preserved: " .. vim.inspect(lines))
   end)
+
+  it("strips and reapplies line comments on linewise visual selection", function()
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_current_buf(bufnr)
+    vim.bo[bufnr].commentstring = "// %s"
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+      "// diagnose common mistake",
+      "// not the worst",
+      "code()",
+    })
+    set_visual_marks(bufnr, 1, 0, 2, 14)
+
+    local result = metafrastis.translate_selection(bufnr, "V", { target_lang = "es", replace = true })
+
+    -- Translated payload must not contain the comment leader.
+    assert.is_nil(result:find("//"), "translated text should not contain comment leader: " .. result)
+    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    assert.truthy(lines[1]:match("^// "), "first line should keep // prefix: " .. lines[1])
+    assert.truthy(lines[2]:match("^// "), "second line should keep // prefix: " .. lines[2])
+    assert.equals("code()", lines[3])
+  end)
+
+  it("preserves indentation when reapplying comment leader on visual selection", function()
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_current_buf(bufnr)
+    vim.bo[bufnr].commentstring = "// %s"
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "    // indented comment" })
+    set_visual_marks(bufnr, 1, 0, 1, 23)
+
+    metafrastis.translate_selection(bufnr, "V", { target_lang = "ja", replace = true })
+
+    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    assert.truthy(lines[1]:match("^    // "), "indent and // prefix should be restored: " .. lines[1])
+  end)
+
+  it("strips and reapplies block comments on linewise visual selection", function()
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_current_buf(bufnr)
+    vim.bo[bufnr].commentstring = "/* %s */"
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "/* block text */" })
+    set_visual_marks(bufnr, 1, 0, 1, 16)
+
+    local result = metafrastis.translate_selection(bufnr, "V", { target_lang = "fr", replace = true })
+
+    assert.is_nil(result:find("/%*"), "translated text should not contain block comment open: " .. result)
+    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    assert.truthy(lines[1]:match("^/%* .* %*/$"), "block comment should be reapplied: " .. lines[1])
+  end)
+
+  it("leaves selection alone when commentstring is unset", function()
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_current_buf(bufnr)
+    vim.bo[bufnr].commentstring = ""
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "// not actually a comment" })
+    set_visual_marks(bufnr, 1, 0, 1, 25)
+
+    local result = metafrastis.translate_selection(bufnr, "V", { target_lang = "de", replace = true })
+
+    assert.equals("// not actually a comment [echo]->de", result)
+  end)
+
+  it("strips comment leader in show_window output", function()
+    local win_opts
+    package.loaded["snacks"] = {
+      notify = {
+        info = function() end,
+        warn = function() end,
+        notify = function() end,
+      },
+      win = function(opts)
+        win_opts = opts
+        return { show = function() end }
+      end,
+    }
+    require("metafrastis.ui")._reset_for_tests()
+
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_current_buf(bufnr)
+    vim.bo[bufnr].commentstring = "// %s"
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "// comment payload" })
+    set_visual_marks(bufnr, 1, 0, 1, 18)
+
+    metafrastis.translate_selection(bufnr, "V", {
+      target_lang = "es",
+      replace = false,
+      show_window = true,
+    })
+
+    assert.truthy(win_opts)
+    assert.is_nil(win_opts.text[1]:find("//"), "show_window output should not contain // : " .. win_opts.text[1])
+
+    package.loaded["snacks"] = nil
+    require("metafrastis.ui")._reset_for_tests()
+  end)
+
+  it("async strips and reapplies line comments on linewise visual selection", function()
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_current_buf(bufnr)
+    vim.bo[bufnr].commentstring = "// %s"
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "// async commented line" })
+    set_visual_marks(bufnr, 1, 0, 1, 23)
+
+    local done = false
+    local result
+    metafrastis.translate_selection_async(bufnr, "V", { target_lang = "ko", replace = true }, {
+      on_success = function(out)
+        result = out
+        done = true
+      end,
+      on_error = function(err)
+        done = true
+        error(err)
+      end,
+    })
+
+    vim.wait(1000, function()
+      return done
+    end)
+
+    assert.is_true(done)
+    assert.is_nil(result:find("//"), "async translated text should not contain comment leader: " .. result)
+    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    assert.truthy(lines[1]:match("^// "), "async result should keep // prefix: " .. lines[1])
+  end)
 end)
 
 describe("Snacks.win result window", function()
